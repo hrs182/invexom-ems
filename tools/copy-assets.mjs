@@ -2,8 +2,10 @@
 /** Copy non-TS assets (migrations SQL, license public key) into dist-electron. */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('../', import.meta.url).pathname;
+/** Project root as a real OS path (fileURLToPath handles Windows drive letters). */
+const root = fileURLToPath(new URL('../', import.meta.url));
 const jobs = [
   ['electron/services/migrations', 'dist-electron/electron/services/migrations', '.sql'],
   ['electron/services/keys', 'dist-electron/electron/services/keys', '.pem'],
