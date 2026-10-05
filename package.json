@@ -41,7 +41,7 @@
     "build:renderer": "vite build",
     "dev": "vite",
     "dev:electron": "npm run build:main && electron .",
-    "dist": "npm run build && electron-builder --win nsis portable && node tools/finalize-dist.mjs",
+    "dist": "npm run build && electron-builder --win nsis portable --publish never && node tools/finalize-dist.mjs",
     "gen:keys": "node tools/gen-keys.mjs",
     "make:license": "node tools/make-license.mjs",
     "postinstall": "electron-builder install-app-deps",
