@@ -12,7 +12,7 @@ const info = {
   demoBuild: process.env.EMS_DEMO === '1',
   builtAt: new Date().toISOString(),
 };
-const outDir = path.join(root, 'dist-electron');
+const outDir = path.join(root, 'dist-electron', 'electron');
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'build-info.json'), JSON.stringify(info, null, 2));
 console.log('build-info:', JSON.stringify(info));
