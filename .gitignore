@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-electron/
+dist-installer/
+*.log
+.DS_Store
+# License private key — NEVER commit
+**/license-private.pem
+tools/license-registry.json
+electron/services/keys/license-public.pem
+# Local dev artifacts
+.ems-dev/

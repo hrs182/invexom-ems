@@ -1,0 +1,70 @@
+# Build the Invexom EMS Windows installer on GitHub's cloud
+#
+# Why this exists: building the .exe needs Microsoft's C++ build tools (~5GB)
+# on a Windows PC. GitHub's free Windows runners already have Visual Studio
+# with MSVC preinstalled, so the installer gets built in the cloud and Harsh
+# just downloads the finished .exe. Nothing to install locally.
+#
+# Cost: free tier = 2,000 Actions minutes/month for private repos; a Windows
+# build (~10-20 min real time) counts 2x, so ~50-100 installer builds/month
+# fit comfortably in the free tier. Public repos: unlimited free minutes.
+#
+# One-time setup (Harsh):
+#   1. Create a PRIVATE repo on github.com (e.g. invexom-ems), push this code.
+#   2. Derive the PUBLIC key from the private key on his PC:
+#        node -e "const c=require('node:crypto'),f=require('node:fs');
+#          const k=c.createPrivateKey(f.readFileSync(process.env.USERPROFILE+'\\.ems-private\\license-private.pem','utf8'));
+#          console.log(c.createPublicKey(k).export({format:'pem'}).toString())"
+#      (path = wherever he keeps license-private.pem; it is NEVER committed)
+#   3. Repo Settings > Secrets and variables > Actions > New repository secret:
+#        Name: EMS_PUBLIC_KEY   Value: the public-key text from step 2.
+#   4. Actions tab > "Build Windows installer" > Run workflow > download the
+#      .exe from the run's Artifacts (kept 30 days).
+#
+# The PRIVATE key never leaves Harsh's machine. Licenses are still minted
+# locally with: npm run make:license
+
+name: Build Windows installer
+
+on:
+  workflow_dispatch:  # manual button in the Actions tab
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+
+      - name: Place license public key
+        shell: pwsh
+        run: |
+          if (-not $env:EMS_PUBLIC_KEY) {
+            Write-Error "Missing repo secret EMS_PUBLIC_KEY. Add it under Settings > Secrets and variables > Actions (see .github/workflows/build-installer.yml header for how to derive it)."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path "electron/services/keys" | Out-Null
+          Set-Content -Path "electron/services/keys/license-public.pem" -Value $env:EMS_PUBLIC_KEY -NoNewline:$false
+        env:
+          EMS_PUBLIC_KEY: ${{ secrets.EMS_PUBLIC_KEY }}
+
+      - name: Install dependencies (compiles better-sqlite3 with preinstalled MSVC)
+        run: npm ci
+
+      - name: Build installer
+        run: npm run dist
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: invexom-ems-installer
+          path: |
+            dist-installer/*.exe
+            dist-installer/CHECKSUMS.txt
+          retention-days: 30

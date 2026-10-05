@@ -1,0 +1,231 @@
+/* ============================================================
+   Invexom EMS — Professional print system
+   Every printable document renders inside .print-doc, which is
+   hidden on screen and is the ONLY thing visible in print.
+   App chrome (sidebar, topbar, buttons) never prints.
+   ============================================================ */
+
+.print-doc {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 14mm;
+  }
+
+  html, body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  /* Hide the entire app; show only the print document */
+  #root { display: none !important; }
+  .print-doc {
+    display: block !important;
+    position: static !important;
+    color: #111;
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+
+  .print-doc * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- Letterhead ---------- */
+  .p-letterhead {
+    text-align: center;
+    border-bottom: 3px double #1e3a5f;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+  .p-letterhead .p-school {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #1e3a5f;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+  .p-letterhead .p-addr {
+    font-size: 9pt;
+    color: #444;
+    margin: 2px 0 0;
+  }
+  .p-letterhead .p-reg {
+    font-size: 8.5pt;
+    color: #666;
+    margin: 2px 0 0;
+  }
+
+  /* ---------- Document title bar ---------- */
+  .p-doctitle {
+    text-align: center;
+    margin: 0 0 12px;
+  }
+  .p-doctitle h2 {
+    display: inline-block;
+    font-size: 14pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    border: 1.5px solid #1e3a5f;
+    color: #1e3a5f;
+    padding: 4px 22px;
+    margin: 0;
+  }
+  .p-doctitle .p-docno {
+    font-size: 9.5pt;
+    color: #333;
+    margin-top: 6px;
+  }
+
+  /* ---------- Info grids ---------- */
+  .p-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+    font-size: 10pt;
+  }
+  .p-meta table { border-collapse: collapse; }
+  .p-meta td {
+    padding: 2px 8px 2px 0;
+    vertical-align: top;
+  }
+  .p-meta td.p-k {
+    color: #555;
+    white-space: nowrap;
+  }
+  .p-meta td.p-v {
+    font-weight: 600;
+    color: #111;
+  }
+
+  /* ---------- Tables ---------- */
+  .p-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 12px;
+    font-size: 10pt;
+  }
+  .p-table th {
+    background: #1e3a5f !important;
+    color: #fff !important;
+    font-weight: 600;
+    text-align: left;
+    padding: 7px 10px;
+    border: 1px solid #1e3a5f;
+  }
+  .p-table th.p-r, .p-table td.p-r { text-align: right; }
+  .p-table th.p-c, .p-table td.p-c { text-align: center; }
+  .p-table td {
+    padding: 6px 10px;
+    border: 1px solid #bbb;
+    vertical-align: top;
+  }
+  .p-table tr.p-total td {
+    font-weight: 700;
+    font-size: 11pt;
+    border-top: 2px solid #1e3a5f;
+    background: #f2f5fa !important;
+  }
+
+  /* ---------- Amount in words / notes ---------- */
+  .p-words {
+    font-size: 10pt;
+    font-style: italic;
+    border: 1px dashed #999;
+    padding: 6px 10px;
+    margin: 0 0 12px;
+  }
+  .p-note {
+    font-size: 9pt;
+    color: #444;
+    margin: 0 0 6px;
+  }
+
+  /* ---------- Signatures ---------- */
+  .p-signs {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 42px;
+    page-break-inside: avoid;
+  }
+  .p-sign {
+    text-align: center;
+    font-size: 10pt;
+    min-width: 160px;
+  }
+  .p-sign .p-line {
+    border-top: 1px solid #111;
+    margin-bottom: 4px;
+    height: 1px;
+  }
+
+  /* ---------- Footer ---------- */
+  .p-footer {
+    margin-top: 18px;
+    padding-top: 8px;
+    border-top: 1px solid #ccc;
+    font-size: 8.5pt;
+    color: #666;
+    text-align: center;
+  }
+
+  /* ---------- Cards (ID / admit) ---------- */
+  .p-card {
+    width: 86mm;
+    height: 54mm;
+    border: 1.5px solid #1e3a5f;
+    border-radius: 3mm;
+    overflow: hidden;
+    font-size: 8pt;
+    page-break-inside: avoid;
+    margin: 0 auto 8mm;
+  }
+  .p-card .p-card-head {
+    background: #1e3a5f !important;
+    color: #fff !important;
+    text-align: center;
+    padding: 4px 6px;
+  }
+  .p-card .p-card-head .p-s {
+    font-size: 10pt;
+    font-weight: 700;
+    margin: 0;
+  }
+  .p-card .p-card-head .p-t {
+    font-size: 7.5pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin: 1px 0 0;
+  }
+  .p-card .p-card-body {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+  .p-card .p-photo {
+    width: 22mm;
+    height: 26mm;
+    border: 1px solid #999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 7pt;
+    flex-shrink: 0;
+  }
+  .p-card .p-fields { flex: 1; }
+  .p-card .p-fields div { margin-bottom: 2.5px; }
+  .p-card .p-fields .p-k { color: #555; }
+  .p-card .p-fields .p-v { font-weight: 600; }
+
+  /* ---------- Utility ---------- */
+  .p-avoid { page-break-inside: avoid; }
+  .p-break { page-break-before: always; }
+}

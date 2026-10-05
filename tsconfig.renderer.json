@@ -1,0 +1,1 @@
+{"compilerOptions":{"noEmit":true,"types":["vite/client"]},"extends":"./tsconfig.json","include":["src/**/*.ts","src/**/*.tsx","shared/**/*.ts"]}

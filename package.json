@@ -1,0 +1,104 @@
+{
+  "author": "Invexom",
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "better-sqlite3": "13.0.3",
+    "clsx": "2.1.1",
+    "echarts": "6.1.0",
+    "exceljs": "4.4.0",
+    "pdf-lib": "1.17.1",
+    "qrcode": "1.5.4",
+    "radix-ui": "1.6.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "zustand": "5.0.15"
+  },
+  "description": "Invexom EMS \u2014 Education Management System. Fully offline, one-time-license school management software for schools, academies and coaching centers.",
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "24.10.1",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "playwright": "^1.63.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  },
+  "license": "UNLICENSED",
+  "main": "dist-electron/main.js",
+  "name": "invexom-ems",
+  "productName": "Invexom EMS",
+  "scripts": {
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json && node tools/copy-assets.mjs && node tools/write-build-info.mjs",
+    "build:renderer": "vite build",
+    "dev": "vite",
+    "dev:electron": "npm run build:main && electron .",
+    "dist": "npm run build && electron-builder --win nsis portable && node tools/finalize-dist.mjs",
+    "gen:keys": "node tools/gen-keys.mjs",
+    "make:license": "node tools/make-license.mjs",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.main.json --noEmit"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "build": {
+    "appId": "com.invexom.ems",
+    "productName": "Invexom EMS",
+    "copyright": "Copyright \u00a9 2026 Invexom",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/eula.txt",
+        "to": "eula.txt"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Invexom-EMS-Setup-${version}.${ext}",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Invexom EMS",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "installerSidebar": "assets/installer-sidebar.bmp",
+      "installerHeader": "assets/installer-header.bmp",
+      "license": "assets/eula.txt",
+      "include": "build/uninstaller.nsh",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "menuCategory": "Invexom"
+    },
+    "portable": {
+      "artifactName": "Invexom-EMS-Portable-${version}.${ext}"
+    }
+  }
+}
