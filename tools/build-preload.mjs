@@ -14,9 +14,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const tscBin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
+// Run TypeScript through node directly (node_modules/typescript/lib/tsc.js).
+// Never spawn node_modules/.bin/tsc.cmd on Windows: Node's execFileSync cannot
+// execute .cmd/.bat files without shell:true (fails with EINVAL/ENOENT).
+const tscJs = path.join(root, 'node_modules', 'typescript', 'lib', 'tsc.js');
 
-execFileSync(tscBin, ['-p', 'tsconfig.preload.json'], { cwd: root, stdio: 'inherit' });
+execFileSync(process.execPath, [tscJs, '-p', 'tsconfig.preload.json'], { cwd: root, stdio: 'inherit' });
 
 const js = path.join(root, 'dist-electron', 'electron', 'preload.js');
 const cjs = path.join(root, 'dist-electron', 'electron', 'preload.cjs');
