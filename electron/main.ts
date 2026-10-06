@@ -83,7 +83,7 @@ function createWindow(): void {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(HERE, '..', 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(HERE, '..', '..', 'dist', 'index.html'));
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
