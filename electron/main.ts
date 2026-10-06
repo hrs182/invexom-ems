@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -87,6 +87,16 @@ function createWindow(): void {
   }
 
   mainWindow.on('closed', () => { mainWindow = null; });
+
+  // If the preload script itself fails to load, the bridge never exists and
+  // the UI can only report "bridge unavailable". Surface the real cause in a
+  // native dialog so it is diagnosable on the user's machine.
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    dialog.showErrorBox(
+      'EMS preload failed',
+      `${preloadPath}\n\n${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
 }
 
 app.whenReady().then(() => {

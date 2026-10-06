@@ -1,6 +1,8 @@
 import type { IpcChannels } from '@shared/types';
 
 declare global {
+  /** Build timestamp baked in by vite.config.ts `define`. */
+  const __EMS_BUILD_TIME__: string;
   interface Window {
     ems?: {
       invoke: <K extends keyof IpcChannels>(channel: K, req: IpcChannels[K]['req']) => Promise<IpcChannels[K]['res']>;
@@ -24,7 +26,9 @@ export async function invoke<K extends keyof IpcChannels>(
     const { mockInvoke } = await import('../mockIpc');
     return mockInvoke(channel, req);
   }
-  throw new Error('EMS bridge unavailable');
+  throw new Error(
+    `EMS bridge unavailable (bridge: ${typeof window.ems}, protocol: ${window.location.protocol}, build: ${__EMS_BUILD_TIME__})`,
+  );
 }
 
 export function openFile(opts: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null> {

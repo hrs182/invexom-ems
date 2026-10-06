@@ -6,6 +6,10 @@ import path from 'node:path';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: './',
+  define: {
+    // Baked-in build timestamp — surfaced in startup diagnostics.
+    __EMS_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
