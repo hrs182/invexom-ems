@@ -1,0 +1,1 @@
+{"compilerOptions":{"module":"CommonJS","moduleResolution":"Node"},"exclude":[],"extends":"./tsconfig.main.json","include":["electron/preload.ts"]}

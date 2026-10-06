@@ -71,7 +71,7 @@ function createWindow(): void {
     title: 'Invexom EMS',
     backgroundColor: '#fafafa',
     webPreferences: {
-      preload: path.join(HERE, 'preload.js'),
+      preload: path.join(HERE, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
