@@ -1,1 +1,23 @@
-{"compilerOptions":{"declaration":false,"jsx":"react-jsx","module":"NodeNext","moduleResolution":"NodeNext","noEmit":false,"outDir":"dist-electron","rootDir":".","sourceMap":false,"types":["node"]},"extends":"./tsconfig.json","include":["electron/**/*.ts","shared/**/*.ts"]}
+{
+  "compilerOptions": {
+    "declaration": false,
+    "jsx": "react-jsx",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": "dist-electron",
+    "rootDir": ".",
+    "sourceMap": false,
+    "types": [
+      "node"
+    ]
+  },
+  "extends": "./tsconfig.json",
+  "include": [
+    "electron/**/*.ts",
+    "shared/**/*.ts"
+  ],
+  "exclude": [
+    "electron/preload.ts"
+  ]
+}
