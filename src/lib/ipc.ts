@@ -36,6 +36,29 @@ export function openFile(opts: { title: string; filters: { name: string; extensi
   return Promise.resolve(null);
 }
 
+/**
+ * Failure shape from the main process. `error` is a stable machine-readable
+ * code (screens may branch on well-known codes); `errorMessage` is the
+ * display-safe text; `errorDetail` is the raw technical detail for support
+ * ("copy details") — never shown by default.
+ */
+export interface IpcFailure {
+  ok: false;
+  error: string;
+  errorMessage?: string;
+  errorDetail?: string;
+}
+
+/** Prefer the display-safe message; fall back to the raw code. */
+export function errText(res: { error: string; errorMessage?: string }): string {
+  return res.errorMessage || res.error;
+}
+
+/** Raw technical detail for support, or '' when absent. */
+export function errDetail(res: { error: string; errorDetail?: string }): string {
+  return res.errorDetail || '';
+}
+
 export function openExternal(url: string): Promise<void> {
   if (window.ems?.openExternal) return window.ems.openExternal(url);
   window.open(url, '_blank', 'noopener');

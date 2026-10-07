@@ -86,12 +86,38 @@ export function schemaVersion(d?: Db): number {
 }
 
 /** PRAGMA integrity_check for the Diagnostics screen. */
-export function integrityCheck(): { ok: boolean; detail: string } {
-  try {
+export function integrityCheck(): { ok: boolean; detail: string } {  try {
     const rows = getDb().prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
     const ok = rows.length === 1 && rows[0].integrity_check === 'ok';
     return { ok, detail: ok ? 'ok' : rows.map((r) => r.integrity_check).join('; ') };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * How the encrypted vault should be opened. Pure and unit-tested.
+ *
+ * - 'use-working': crash recovery — a surviving working file newer than the
+ *   encrypted snapshot wins (WAL replay), so no data is lost.
+ * - 'decrypt':     a vault snapshot exists — decrypt it to the working file.
+ * - 'fresh':       no vault exists yet (first-time setup). There is nothing
+ *                  to decrypt; better-sqlite3 creates the file on open.
+ *                  (Previously this case fell through to decryptFile and
+ *                  crashed with ENOENT on the missing .db.enc file.)
+ */
+export type VaultOpenStrategy = 'use-working' | 'decrypt' | 'fresh';
+
+export function vaultOpenStrategy(workingDb: string, dbEnc: string): VaultOpenStrategy {
+  const workingExists = fs.existsSync(workingDb);
+  const encExists = fs.existsSync(dbEnc);
+  if (workingExists && encExists) {
+    try {
+      if (fs.statSync(workingDb).mtimeMs > fs.statSync(dbEnc).mtimeMs) return 'use-working';
+    } catch {
+      /* fall through to decrypt */
+    }
+  }
+  if (encExists) return 'decrypt';
+  return 'fresh';
 }

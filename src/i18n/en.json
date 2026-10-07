@@ -286,6 +286,8 @@
     "complete": "Complete setup",
     "completeError": "Setup failed: {error}",
     "completing": "Setting up…",
+    "copyDetails": "Copy technical details",
+    "detailsCopied": "Details copied",
     "defaultAmount": "Default amount (₹)",
     "displayName": "Display name",
     "email": "Email",

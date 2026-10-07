@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { invoke, openFile } from '../../lib/ipc';
+import { invoke, openFile, errText, errDetail } from '../../lib/ipc';
 import { t } from '../../i18n/index';
 import { useApp } from '../../stores/app';
 import { Button } from '../../components/ui/button';
@@ -23,6 +23,8 @@ export function SetupWizard() {
   const [step, setStep] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [errorDetail, setErrorDetail] = React.useState('');
+  const [copied, setCopied] = React.useState(false);
 
   const [institution, setInstitution] = React.useState({ name: '', address: '', phone: '', email: '', upiId: '', principalName: '', regNo: '' });
   const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
@@ -53,7 +55,7 @@ export function SetupWizard() {
   };
 
   const finish = async () => {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setErrorDetail(''); setCopied(false);
     try {
       const payload: SetupPayload = {
         institution,
@@ -66,7 +68,9 @@ export function SetupWizard() {
         feeHeads: heads.filter((h) => h.on && h.name.trim()).map((h) => ({ name: h.name.trim(), type: h.type, defaultAmount: 0 })),
       };
       const r = await invoke('setup:complete', payload);
-      if (!r.ok) setError(r.error);
+      // errText prefers the display-safe message; the raw technical detail
+      // is kept for support and never shown by default.
+      if (!r.ok) { setError(errText(r)); setErrorDetail(errDetail(r)); }
       else await boot();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -95,7 +99,27 @@ export function SetupWizard() {
             <ProgressBar value={(step + 1) * 20} />
           </div>
 
-          {error && <Alert tone="danger" className="mb-4">{t('setup.completeError', { error })}</Alert>}
+          {error && (
+            <Alert tone="danger" className="mb-4">
+              <p>{t('setup.completeError', { error })}</p>
+              {errorDetail && (
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(errorDetail);
+                        setCopied(true);
+                      } catch { /* clipboard unavailable */ }
+                    }}
+                  >
+                    {copied ? t('setup.detailsCopied') : t('setup.copyDetails')}
+                  </Button>
+                </div>
+              )}
+            </Alert>
+          )}
 
           {step === 0 && (
             <div className="flex flex-col gap-4">

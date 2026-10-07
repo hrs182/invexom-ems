@@ -2,11 +2,12 @@ import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IpcChannels, SafeUser, MasterKind } from '../shared/types.js';
-import type { EmsPaths } from './services/paths.js';
+import { ensureDirs, type EmsPaths } from './services/paths.js';
+import { toUserError, errorDetail } from './services/errors.js';
 import { getDb, integrityCheck, schemaVersion } from './services/database.js';
 import {
   createVault, unlockDataKey, addUserWrap, removeUserWrap, hashPassword,
-  encryptFile, decryptFile, secureWipe, verifyPassword,
+  encryptFile, secureWipe, verifyPassword,
 } from './services/secure-store.js';
 import { audit, recentAudit } from './services/audit.js';
 import {
@@ -116,8 +117,16 @@ export function registerIpc(ctx: AppContext): void {
       try {
         return await handler(req, ctx);
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { ok: false as const, error: message } as unknown as IpcChannels[K]['res'];
+        // Never leak raw system errors (ENOENT, SQLITE_*, paths, stacks) to
+        // the UI. `error` stays a stable machine-readable code (the renderer
+        // branches on well-known codes); `errorMessage` is display-safe.
+        const ue = toUserError(e);
+        return {
+          ok: false as const,
+          error: ue.code,
+          errorMessage: ue.message,
+          errorDetail: errorDetail(e),
+        } as unknown as IpcChannels[K]['res'];
       }
     });
   };
@@ -143,6 +152,8 @@ export function registerIpc(ctx: AppContext): void {
   on('setup:needed', () => !fs.existsSync(ctx.paths.dbEnc));
 
   on('setup:complete', async (payload) => {
+    // Self-heal: the data dir may have been removed mid-session; recreate it.
+    ctx.paths = ensureDirs();
     if (fs.existsSync(ctx.paths.dbEnc)) throw new Error('already-initialized');
     const s = payload;
     if (!s.institution.name.trim()) throw new Error('institution-name-required');
@@ -235,13 +246,7 @@ export function registerIpc(ctx: AppContext): void {
       } catch {
         return { ok: false as const, error: 'Invalid username or password.' };
       }
-      // Crash recovery: a surviving working file newer than the snapshot wins.
-      const { workingDb, dbEnc } = ctx.paths;
-      let useWorking = false;
-      if (fs.existsSync(workingDb) && fs.existsSync(dbEnc)) {
-        useWorking = fs.statSync(workingDb).mtimeMs > fs.statSync(dbEnc).mtimeMs;
-      }
-      if (!useWorking) decryptFile(key, dbEnc, workingDb);
+      // Crash recovery + fresh-install handling live in openDatabaseWithKey.
       ctx.openDatabaseWithKey(key);
       ctx.dataKey = key;
     }
