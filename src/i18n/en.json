@@ -226,7 +226,8 @@
     "students": "Students",
     "transport": "Transport",
     "users": "Users & Roles",
-    "licensing": "License"
+    "licensing": "License",
+    "diagnostics": "Diagnostics"
   },
   "settings": {
     "addItem": "Add",

@@ -19,6 +19,7 @@ import {
 } from './services/backup.js';
 import { nextNumber, listNumbering, setPattern } from './services/numbering.js';
 import { verifyLogin, listUsers, createUser, listRoles, saveRole, seedRoles, can } from './services/users.js';
+import { seedSetupMasters } from './services/setup.js';
 import { checkForUpdates } from './services/updater.js';
 import {
   listStudents, getStudent, createStudent, updateStudent, changeStudentStatus,
@@ -179,21 +180,7 @@ export function registerIpc(ctx: AppContext): void {
       const adminRole = db.prepare("SELECT id FROM roles WHERE name = 'Administrator'").get() as { id: number };
       db.prepare('INSERT INTO users (username, display_name, password_hash, role_id) VALUES (?, ?, ?, ?)')
         .run(s.admin.username.trim(), s.admin.displayName.trim() || s.admin.username.trim(), hashPassword(s.admin.password), adminRole.id);
-      let order = 0;
-      for (const c of s.classes) {
-        if (!c.name.trim()) continue;
-        db.prepare("INSERT INTO masters (kind, name, sort_order) VALUES ('class', ?, ?)").run(c.name.trim(), order++);
-        for (const sec of c.sections) {
-          if (!sec.trim()) continue;
-          db.prepare("INSERT INTO masters (kind, name, extra, sort_order) VALUES ('section', ?, ?, ?)")
-            .run(sec.trim(), JSON.stringify({ class: c.name.trim() }), order++);
-        }
-      }
-      for (const h of s.feeHeads) {
-        if (!h.name.trim()) continue;
-        db.prepare("INSERT INTO masters (kind, name, extra) VALUES ('fee-head', ?, ?)")
-          .run(h.name.trim(), JSON.stringify({ type: h.type, defaultAmount: h.defaultAmount || 0 }));
-      }
+      seedSetupMasters(db, s.classes, s.feeHeads);
       const numbering = [
         ['receipt', 'Fee receipt', 'R-{YYYY}-{SEQ:5}'],
         ['voucher', 'Accounting voucher', 'V-{YYYY}-{SEQ:5}'],

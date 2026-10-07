@@ -196,7 +196,14 @@ export function SetupWizard() {
               ))}
               <div className="flex gap-2">
                 <Input value={customHead} onChange={(e) => setCustomHead(e.target.value)} placeholder={t('setup.feeHead')} />
-                <Button variant="secondary" onClick={() => { if (customHead.trim()) { setHeads((p) => [...p, { name: customHead.trim(), type: 'optional', on: true }]); setCustomHead(''); } }}>
+                <Button variant="secondary" onClick={() => {
+                  const name = customHead.trim();
+                  if (!name) return;
+                  // Don't allow a duplicate fee-head name (would violate the
+                  // UNIQUE(kind, name) constraint and fail the whole setup).
+                  setHeads((p) => (p.some((h) => h.name.trim().toLowerCase() === name.toLowerCase()) ? p : [...p, { name, type: 'optional', on: true }]));
+                  setCustomHead('');
+                }}>
                   {t('setup.addFeeHead')}
                 </Button>
               </div>
