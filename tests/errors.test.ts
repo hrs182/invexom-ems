@@ -14,12 +14,16 @@ describe('toUserError: professional error mapping', () => {
     expect(ue.message.length).toBeGreaterThan(10);
   });
 
-  it('maps EACCES/EPERM to access-denied guidance', () => {
-    for (const code of ['EACCES', 'EPERM']) {
-      const ue = toUserError(Object.assign(new Error('denied'), { code }));
-      expect(ue.code).toBe('file-access-denied');
-      expect(ue.message).toMatch(/administrator/i);
-    }
+  it('maps EACCES to access-denied guidance', () => {
+    const ue = toUserError(Object.assign(new Error('denied'), { code: 'EACCES' }));
+    expect(ue.code).toBe('file-access-denied');
+    expect(ue.message).toMatch(/administrator/i);
+  });
+
+  it('maps EPERM to file-locked guidance (Windows rename over a locked file)', () => {
+    const ue = toUserError(Object.assign(new Error('operation not permitted, rename'), { code: 'EPERM' }));
+    expect(ue.code).toBe('file-locked');
+    expect(ue.message).toMatch(/locked by another program/i);
   });
 
   it('maps ENOSPC to disk-full guidance', () => {

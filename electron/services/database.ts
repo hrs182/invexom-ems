@@ -142,6 +142,9 @@ export function openVaultDatabase(dataKey: Buffer, workingDb: string, dbEnc: str
     try { fs.unlinkSync(workingDb + '-shm'); } catch { /* ignore */ }
   };
   if (strategy === 'decrypt') {
+    // Defensive: never rename over our own open handle (e.g. a previous
+    // partial attempt in this process left the DB open).
+    closeDatabase();
     dropStaleWal();
     decryptFile(dataKey, dbEnc, workingDb);
   }

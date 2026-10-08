@@ -21,6 +21,7 @@ function RecoveryDialog({ open, onOpenChange, initialUsername }: {
   const [newPassword, setNewPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const resetting = React.useRef(false);
   const [error, setError] = React.useState('');
   const [errorDetailText, setErrorDetailText] = React.useState('');
   const [copied, setCopied] = React.useState(false);
@@ -45,15 +46,19 @@ function RecoveryDialog({ open, onOpenChange, initialUsername }: {
   };
 
   const reset = async () => {
+    // Ref guard: React state updates are async, so two rapid clicks could
+    // both fire before the button disables — never run two resets at once.
+    if (resetting.current) return;
     if (newPassword.length < 8) { setError(t('auth.passwordTooShort')); return; }
     if (newPassword !== confirm) { setError(t('auth.passwordMismatch')); return; }
+    resetting.current = true;
     setBusy(true); setError(''); setErrorDetailText(''); setCopied(false);
     try {
       const r = await invoke('auth:recoverAccess', { username: username.trim(), answer, newPassword });
       if (!r.ok) { setError(errText(r)); setErrorDetailText(errDetail(r)); return; }
       onOpenChange(false);
       await boot();
-    } finally { setBusy(false); }
+    } finally { setBusy(false); resetting.current = false; }
   };
 
   return (

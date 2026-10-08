@@ -61,9 +61,9 @@ const FS_FRIENDLY: Record<string, { code: string; message: string }> = {
       'EMS was denied access to its data folder. Please run the app as administrator, or check your antivirus / ransomware-protection settings, then try again.',
   },
   EPERM: {
-    code: 'file-access-denied',
+    code: 'file-locked',
     message:
-      'EMS was denied access to its data folder. Please run the app as administrator, or check your antivirus / ransomware-protection settings, then try again.',
+      'A data file is locked by another program. Please close any database viewer (DB Browser, VS Code) that has the EMS data file open, make sure only one EMS window is running (check Task Manager for duplicate "Invexom EMS" processes), then try again. If it persists, restart your PC.',
   },
   EBUSY: {
     code: 'file-busy',

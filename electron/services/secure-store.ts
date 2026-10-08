@@ -156,6 +156,9 @@ export function decryptFile(dataKey: Buffer, inPath: string, outPath: string): v
   const tmp = `${outPath}.tmp`;
   // Retry: Windows AV often briefly locks the file right after we touch it.
   withFileRetry(() => fs.writeFileSync(tmp, plaintext));
+  // Clear a stale read-only flag (e.g. file restored from a backup/zip) —
+  // Windows refuses rename over a read-only destination with EPERM.
+  try { fs.chmodSync(outPath, 0o666); } catch { /* destination may not exist */ }
   withFileRetry(() => fs.renameSync(tmp, outPath));
 }
 
