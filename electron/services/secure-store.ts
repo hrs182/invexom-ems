@@ -23,6 +23,31 @@ import fs from 'node:fs';
 
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
 
+/**
+ * Retry a filesystem operation on transient Windows locks.
+ *
+ * Windows antivirus / search indexing / ransomware protection briefly lock
+ * files (EACCES / EPERM / EBUSY) — especially right after another process
+ * (or our own previous step) touched them. A short retry turns these into
+ * non-events instead of surfacing scary "access denied" errors to the user.
+ * Non-retryable errors (and the final attempt) throw as before.
+ */
+export function withFileRetry<T>(fn: () => T, attempts = 4, delayMs = 350): T {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      last = e;
+      const code = (e as { code?: unknown })?.code;
+      const retryable = code === 'EACCES' || code === 'EPERM' || code === 'EBUSY';
+      if (!retryable || i === attempts - 1) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+  throw last;
+}
+
 export interface KeyWrap { user: string; salt: string; iv: string; data: string }
 /** Non-secret recovery metadata (the question is shown at reset time; the answer never is). */
 export interface RecoveryInfo { user: string; questionId: string; question: string }
@@ -62,7 +87,8 @@ export function readKeyMeta(keymetaPath: string): KeyMeta | null {
 }
 
 export function writeKeyMeta(keymetaPath: string, meta: KeyMeta): void {
-  fs.writeFileSync(keymetaPath, JSON.stringify(meta, null, 2), { mode: 0o600 });
+  // Retry: transient Windows AV locks on keymeta.json are common right after login.
+  withFileRetry(() => fs.writeFileSync(keymetaPath, JSON.stringify(meta, null, 2), { mode: 0o600 }));
 }
 
 /** Create a fresh vault: new data key wrapped with the admin's password. */
@@ -112,8 +138,8 @@ export function encryptFile(dataKey: Buffer, inPath: string, outPath: string): v
   const plaintext = fs.readFileSync(inPath);
   const enc = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
   const tmp = `${outPath}.tmp`;
-  fs.writeFileSync(tmp, Buffer.concat([iv, enc]));
-  fs.renameSync(tmp, outPath); // atomic replace
+  withFileRetry(() => fs.writeFileSync(tmp, Buffer.concat([iv, enc])));
+  withFileRetry(() => fs.renameSync(tmp, outPath)); // atomic replace
 }
 
 /** AES-256-GCM decrypt a file -> outPath. Throws on wrong key / corruption. */
@@ -128,8 +154,9 @@ export function decryptFile(dataKey: Buffer, inPath: string, outPath: string): v
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(enc), decipher.final()]);
   const tmp = `${outPath}.tmp`;
-  fs.writeFileSync(tmp, plaintext);
-  fs.renameSync(tmp, outPath);
+  // Retry: Windows AV often briefly locks the file right after we touch it.
+  withFileRetry(() => fs.writeFileSync(tmp, plaintext));
+  withFileRetry(() => fs.renameSync(tmp, outPath));
 }
 
 /** Overwrite a file with random bytes, then delete it (best-effort wipe). */

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>School Letterhead — Invexom EMS</title>
+<!--
+  ============================================================
+  SCHOOL LETTERHEAD (Header + Footer)
+  ------------------------------------------------------------
+  HOW TO USE:
+  1. Replace every {{PLACEHOLDER}} with your school's details
+     (or wire them to your app's template engine).
+  2. Put your document content inside <main> ... </main>.
+  3. Open in Chrome/Edge -> Print -> A4.
+     The header & footer repeat automatically on EVERY page.
+  ============================================================
+-->
+<style>
+  :root {
+    --navy: #1a365d;
+    --teal: #0e9f8a;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --rule: #d1d5db;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    color: var(--ink);
+    background: #e5e7eb;
+  }
+
+  /* ---------- HEADER (repeats on every printed page) ---------- */
+  .letterhead-header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: #ffffff;
+    border-top: 6px solid var(--navy);
+    padding: 14px 0 10px;
+  }
+  .lh-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .lh-logo {
+    width: 64px; height: 64px; flex: 0 0 64px;
+    border-radius: 50%;
+    background: var(--navy);
+    color: #ffffff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; font-weight: 700;
+    overflow: hidden;
+  }
+  .lh-logo img { width: 100%; height: 100%; object-fit: cover; }
+  .lh-school { flex: 1; }
+  .lh-name {
+    font-size: 22px; font-weight: 800; color: var(--navy);
+    letter-spacing: 0.3px; line-height: 1.2;
+  }
+  .lh-tagline {
+    font-size: 11px; color: var(--teal); font-weight: 600;
+    letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px;
+  }
+  .lh-contact {
+    font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.5;
+  }
+  .lh-reg {
+    font-size: 10px; color: var(--muted); margin-top: 2px;
+  }
+  .lh-rule {
+    max-width: 720px; margin: 10px auto 0; padding: 0 8px;
+  }
+  .lh-rule .thick { height: 3px; background: var(--navy); }
+  .lh-rule .thin { height: 1px; background: var(--teal); margin-top: 2px; }
+
+  /* ---------- FOOTER (repeats on every printed page) ---------- */
+  .letterhead-footer {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: #ffffff;
+    padding: 8px 0 10px;
+  }
+  .lf-inner {
+    max-width: 720px; margin: 0 auto; padding: 0 8px;
+  }
+  .lf-rule { height: 1px; background: var(--rule); margin-bottom: 8px; }
+  .lf-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; color: var(--muted);
+  }
+  .lf-center { text-align: center; }
+  .lf-brand {
+    margin-top: 6px; text-align: center;
+    font-size: 9px; color: #9ca3af; letter-spacing: 0.5px;
+  }
+
+  /* ---------- DOCUMENT BODY ---------- */
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    background: #ffffff;
+    padding: 150px 8px 110px;   /* space for fixed header + footer */
+    min-height: 100vh;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  }
+  .doc-title {
+    text-align: center; margin: 6px 0 18px;
+  }
+  .doc-title h2 {
+    font-size: 17px; color: var(--navy);
+    text-transform: uppercase; letter-spacing: 2px;
+    display: inline-block;
+    border-bottom: 2px solid var(--teal);
+    padding-bottom: 4px;
+  }
+  .doc-meta {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--muted); margin-bottom: 14px;
+  }
+  .doc-body { font-size: 13.5px; line-height: 1.75; }
+  .doc-body p { margin-bottom: 10px; }
+  .sign-row {
+    display: flex; justify-content: space-between;
+    margin-top: 64px; font-size: 12px; color: var(--muted);
+  }
+  .sign-box { text-align: center; }
+  .sign-line {
+    width: 170px; border-top: 1px solid var(--ink);
+    margin-bottom: 6px;
+  }
+
+  /* ---------- PRINT ---------- */
+  @page { size: A4; margin: 0; }
+  @media print {
+    body { background: #ffffff; }
+    .page { box-shadow: none; max-width: none; margin: 0; }
+    .lh-inner, .lh-rule, .lf-inner { max-width: none; padding-left: 15mm; padding-right: 15mm; }
+    .page { padding-left: 15mm; padding-right: 15mm; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="letterhead-header">
+  <div class="lh-inner">
+    <div class="lh-logo">
+      <!-- Apna logo lagane ke liye: neeche wali line ka comment hatao aur src me logo ka path do -->
+      <!-- <img src="{{LOGO_URL}}" alt="School Logo"> -->
+      {{LOGO_LETTER}}
+    </div>
+    <div class="lh-school">
+      <div class="lh-name">{{SCHOOL_NAME}}</div>
+      <div class="lh-tagline">{{TAGLINE}}</div>
+      <div class="lh-contact">{{ADDRESS}}<br>{{PHONE}} &nbsp;·&nbsp; {{EMAIL}} &nbsp;·&nbsp; {{WEBSITE}}</div>
+      <div class="lh-reg">Reg. No.: {{REG_NO}} &nbsp;·&nbsp; Principal: {{PRINCIPAL}}</div>
+    </div>
+  </div>
+  <div class="lh-rule"><div class="thick"></div><div class="thin"></div></div>
+</header>
+
+<!-- ================= FOOTER ================= -->
+<footer class="letterhead-footer">
+  <div class="lf-inner">
+    <div class="lf-rule"></div>
+    <div class="lf-row">
+      <span>{{ADDRESS_SHORT}}</span>
+      <span class="lf-center">Page <span class="page-no"></span></span>
+      <span>{{PHONE}} · {{EMAIL}}</span>
+    </div>
+    <div class="lf-brand">Generated by Invexom EMS · {{WEBSITE}}</div>
+  </div>
+</footer>
+
+<!-- ================= DOCUMENT CONTENT (yahan apna content likho) ================= -->
+<main class="page">
+  <div class="doc-title"><h2>{{DOCUMENT_TITLE}}</h2></div>
+
+  <div class="doc-meta">
+    <span>Ref: {{REF_NO}}</span>
+    <span>Date: {{DATE}}</span>
+  </div>
+
+  <div class="doc-body">
+    <p>Dear {{RECIPIENT}},</p>
+    <p>
+      <!-- Apna letter yahan likho -->
+      This is to certify that <strong>{{STUDENT_NAME}}</strong>, Admission No.
+      <strong>{{ADMISSION_NO}}</strong>, Class <strong>{{CLASS}}</strong>, is a
+      bonafide student of {{SCHOOL_NAME}} for the academic session {{SESSION}}.
+    </p>
+    <p>
+      {{BODY_PARAGRAPH_2}}
+    </p>
+    <p>Thanking you,</p>
+  </div>
+
+  <div class="sign-row">
+    <div class="sign-box"><div class="sign-line"></div>Receiver</div>
+    <div class="sign-box"><div class="sign-line"></div>Cashier / Clerk</div>
+    <div class="sign-box"><div class="sign-line"></div>Principal</div>
+  </div>
+</main>
+
+</body>
+</html>

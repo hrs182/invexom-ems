@@ -108,3 +108,37 @@ describe('password recovery via security question', () => {
     expect(recoverySecret('secQ1', 'Smith')).not.toBe(recoverySecret('secQ2', 'Smith'));
   });
 });
+
+describe('withFileRetry (transient Windows locks)', () => {
+  it('retries EACCES/EPERM/EBUSY then succeeds', async () => {
+    const { withFileRetry } = await import('../electron/services/secure-store');
+    let calls = 0;
+    const r = withFileRetry(() => {
+      calls++;
+      if (calls < 3) { const e = new Error('locked') as NodeJS.ErrnoException; e.code = 'EACCES'; throw e; }
+      return 'ok';
+    }, 4, 5);
+    expect(r).toBe('ok');
+    expect(calls).toBe(3);
+  });
+
+  it('throws immediately on non-retryable errors', async () => {
+    const { withFileRetry } = await import('../electron/services/secure-store');
+    let calls = 0;
+    expect(() => withFileRetry(() => {
+      calls++;
+      const e = new Error('no such file') as NodeJS.ErrnoException; e.code = 'ENOENT'; throw e;
+    }, 4, 5)).toThrow('no such file');
+    expect(calls).toBe(1);
+  });
+
+  it('gives up after all attempts on persistent locks', async () => {
+    const { withFileRetry } = await import('../electron/services/secure-store');
+    let calls = 0;
+    expect(() => withFileRetry(() => {
+      calls++;
+      const e = new Error('denied') as NodeJS.ErrnoException; e.code = 'EACCES'; throw e;
+    }, 3, 5)).toThrow('denied');
+    expect(calls).toBe(3);
+  });
+});

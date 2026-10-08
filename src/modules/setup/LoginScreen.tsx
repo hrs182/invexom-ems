@@ -22,20 +22,22 @@ function RecoveryDialog({ open, onOpenChange, initialUsername }: {
   const [confirm, setConfirm] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [errorDetailText, setErrorDetailText] = React.useState('');
+  const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
       setUsername(initialUsername);
       setPhase('ask'); setQuestion(''); setAnswer('');
-      setNewPassword(''); setConfirm(''); setError('');
+      setNewPassword(''); setConfirm(''); setError(''); setErrorDetailText(''); setCopied(false);
     }
   }, [open, initialUsername]);
 
   const checkQuestion = async () => {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setErrorDetailText(''); setCopied(false);
     try {
       const r = await invoke('auth:recoveryQuestion', { username: username.trim() });
-      if (!r.ok) { setError(errText(r)); return; }
+      if (!r.ok) { setError(errText(r)); setErrorDetailText(errDetail(r)); return; }
       if (!r.question) { setError(t('auth.noRecovery')); return; }
       setQuestion(r.question);
       setPhase('answer');
@@ -45,10 +47,10 @@ function RecoveryDialog({ open, onOpenChange, initialUsername }: {
   const reset = async () => {
     if (newPassword.length < 8) { setError(t('auth.passwordTooShort')); return; }
     if (newPassword !== confirm) { setError(t('auth.passwordMismatch')); return; }
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setErrorDetailText(''); setCopied(false);
     try {
       const r = await invoke('auth:recoverAccess', { username: username.trim(), answer, newPassword });
-      if (!r.ok) { setError(errText(r)); return; }
+      if (!r.ok) { setError(errText(r)); setErrorDetailText(errDetail(r)); return; }
       onOpenChange(false);
       await boot();
     } finally { setBusy(false); }
@@ -57,7 +59,27 @@ function RecoveryDialog({ open, onOpenChange, initialUsername }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={t('auth.recoveryTitle')} description={t('auth.recoverySubtitle')}>
       <div className="flex flex-col gap-4">
-        {error && <Alert tone="danger">{error}</Alert>}
+        {error && (
+          <Alert tone="danger">
+            <p>{error}</p>
+            {errorDetailText && (
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(errorDetailText);
+                      setCopied(true);
+                    } catch { /* clipboard unavailable */ }
+                  }}
+                >
+                  {copied ? t('setup.detailsCopied') : t('setup.copyDetails')}
+                </Button>
+              </div>
+            )}
+          </Alert>
+        )}
         {phase === 'ask' ? (
           <>
             <Field label={t('auth.username')} required>

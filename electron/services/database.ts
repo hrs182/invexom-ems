@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decryptFile } from './secure-store.js';
+import { decryptFile, withFileRetry } from './secure-store.js';
 
 /**
  * SQLite data layer (better-sqlite3, WAL mode).
@@ -22,7 +22,8 @@ const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '
 export function openDatabase(workingDbPath: string): Db {
   closeDatabase();
   dbPath = workingDbPath;
-  const d = new Database(workingDbPath);
+  // Retry: Windows AV can briefly lock the file right after decrypt/wipe.
+  const d = withFileRetry(() => new Database(workingDbPath));
   // Crash safety: WAL + synchronous NORMAL is the recommended durable combo.
   d.pragma('journal_mode = WAL');
   d.pragma('synchronous = NORMAL');
