@@ -3,8 +3,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDirs, type EmsPaths } from './services/paths.js';
-import { openDatabase, closeDatabase, getDb, vaultOpenStrategy } from './services/database.js';
-import { decryptFile, encryptFile, secureWipe } from './services/secure-store.js';
+import { closeDatabase, getDb, openVaultDatabase } from './services/database.js';
+import { encryptFile, secureWipe } from './services/secure-store.js';
 import { schedulerTick } from './services/backup.js';
 import { registerIpc, type AppContext } from './ipc.js';
 import type { SafeUser } from '../shared/types.js';
@@ -32,15 +32,7 @@ const ctx: AppContext = {
   demoBuild: buildInfo.demoBuild,
   version: buildInfo.version,
   openDatabaseWithKey: (key: Buffer) => {
-    const { workingDb, dbEnc } = ctx.paths;
-    const strategy = vaultOpenStrategy(workingDb, dbEnc);
-    // 'fresh' = first-time setup, no vault snapshot exists yet: there is
-    // nothing to decrypt (decrypting here used to crash with ENOENT on the
-    // missing .db.enc file). better-sqlite3 creates the file on open.
-    // An orphan working file (vault deleted externally) is opened as-is —
-    // never wiped, so no data is destroyed.
-    if (strategy === 'decrypt') decryptFile(key, dbEnc, workingDb);
-    openDatabase(workingDb);
+    openVaultDatabase(key, ctx.paths.workingDb, ctx.paths.dbEnc);
   },
   lockVault: () => {
     try {

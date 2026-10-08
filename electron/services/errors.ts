@@ -33,6 +33,14 @@ const FRIENDLY: Record<string, string> = {
     'We could not find that user on this device.',
   'bad-password':
     'The password you entered is incorrect.',
+  'no-recovery':
+    'No security question is set for this user on this device.',
+  'bad-answer':
+    'That answer does not match our records. Please try again.',
+  'recovery-question-required':
+    'Please choose a security question — it is your only way back in if you forget the password.',
+  'recovery-answer-required':
+    'Please answer the security question (at least 3 characters).',
   'corrupt vault file':
     'Your data file appears to be damaged. Please restore from a backup, or contact support.',
   // Codes the renderer branches on: keep the code, it shows its own UI.

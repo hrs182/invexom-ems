@@ -24,7 +24,9 @@ import fs from 'node:fs';
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
 
 export interface KeyWrap { user: string; salt: string; iv: string; data: string }
-export interface KeyMeta { version: 1; wraps: KeyWrap[] }
+/** Non-secret recovery metadata (the question is shown at reset time; the answer never is). */
+export interface RecoveryInfo { user: string; questionId: string; question: string }
+export interface KeyMeta { version: 1; wraps: KeyWrap[]; recovery?: RecoveryInfo[] }
 
 function deriveKek(password: string, salt: Buffer): Buffer {
   return crypto.scryptSync(password, salt, 32, SCRYPT_OPTS);
@@ -162,3 +164,74 @@ export function verifyPassword(password: string, stored: string): boolean {
   } catch { return false; }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Password recovery via security question                             */
+/*                                                                     */
+/* The data key is ALSO wrapped with a secret derived from the user's  */
+/* security question + answer (set during setup). Forgetting the       */
+/* password therefore does NOT lose the data: the answer re-unwraps   */
+/* the same data key, and the user picks a new password (which simply */
+/* replaces the password wrap). The answer itself is never stored —    */
+/* only the question text (shown at reset time) lives in keymeta.      */
+/* ------------------------------------------------------------------ */
+
+const RECOVERY_WRAP_PREFIX = 'recovery:';
+
+const recoveryWrapUser = (username: string): string =>
+  RECOVERY_WRAP_PREFIX + username.toLowerCase();
+
+/** Canonical secret derived from question + answer (normalized, never stored). */
+export function recoverySecret(questionId: string, answer: string): string {
+  return `ems-recovery-v1:${questionId}:${answer.trim().toLowerCase()}`;
+}
+
+/**
+ * Store/refresh the recovery wrap + question for a user. Call while the
+ * vault is unlocked (setup, or any password change for that user).
+ */
+export function setRecoveryInfo(
+  keymetaPath: string,
+  dataKey: Buffer,
+  username: string,
+  questionId: string,
+  question: string,
+  answer: string,
+): void {
+  const meta = readKeyMeta(keymetaPath) ?? { version: 1 as const, wraps: [] as KeyWrap[] };
+  const wrapUser = recoveryWrapUser(username);
+  const wrap = wrapKey(dataKey, recoverySecret(questionId, answer));
+  wrap.user = wrapUser;
+  meta.wraps = meta.wraps.filter((w) => w.user !== wrapUser);
+  meta.wraps.push(wrap);
+  const info: RecoveryInfo = { user: username, questionId, question };
+  meta.recovery = (meta.recovery ?? []).filter((r) => r.user.toLowerCase() !== username.toLowerCase());
+  meta.recovery.push(info);
+  writeKeyMeta(keymetaPath, meta);
+}
+
+/** The stored (non-secret) recovery question for a user, if any. Works while locked. */
+export function getRecoveryInfo(keymetaPath: string, username: string): RecoveryInfo | null {
+  const meta = readKeyMeta(keymetaPath);
+  return meta?.recovery?.find((r) => r.user.toLowerCase() === username.toLowerCase()) ?? null;
+}
+
+/**
+ * Re-derive the data key from a security answer.
+ * Throws 'no-recovery' when none was set, 'bad-answer' on a wrong answer.
+ */
+export function unlockWithRecovery(
+  keymetaPath: string,
+  username: string,
+  questionId: string,
+  answer: string,
+): Buffer {
+  const meta = readKeyMeta(keymetaPath);
+  const wrap = meta?.wraps.find((w) => w.user === recoveryWrapUser(username));
+  if (!wrap) throw new Error('no-recovery');
+  try {
+    return unwrapKey(wrap, recoverySecret(questionId, answer));
+  } catch {
+    throw new Error('bad-answer');
+  }
+}

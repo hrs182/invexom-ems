@@ -41,6 +41,8 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'auth:logout': async () => { loggedIn = null; return { ok: true as const }; },
   'auth:me': async () => loggedIn,
   'auth:changePassword': async () => ({ ok: true as const }),
+  'auth:recoveryQuestion': async () => ({ ok: true as const, question: 'What is your mother\u2019s maiden name?' }),
+  'auth:recoverAccess': async () => ({ ok: true as const, user: adminUser }),
   'license:status': async () => demoLicense,
   'license:machineCode': async () => ({ machineCode: demoLicense.machineCode }),
   'license:hwInfo': async () => ({ machineCode: demoLicense.machineCode, disk: 'mock-disk-hash', board: 'mock-board-hash', cpu: 'mock-cpu-hash' }),

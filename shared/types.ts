@@ -72,6 +72,8 @@ export interface SetupPayload {
   classes: { name: string; sections: string[] }[];
   admin: { username: string; displayName: string; password: string };
   feeHeads: { name: string; type: 'one-time' | 'periodic' | 'optional'; defaultAmount: number }[];
+  /** Password-recovery security question for the admin (answer never stored). */
+  recovery: { questionId: string; question: string; answer: string };
 }
 
 export interface InstitutionProfile {
@@ -134,6 +136,8 @@ export interface IpcChannels {
   'auth:logout': { req: void; res: { ok: true } };
   'auth:me': { req: void; res: SafeUser | null };
   'auth:changePassword': { req: { currentPassword: string; newPassword: string }; res: { ok: true } | { ok: false; error: string } };
+  'auth:recoveryQuestion': { req: { username: string }; res: { ok: true; question: string | null } | { ok: false; error: string } };
+  'auth:recoverAccess': { req: { username: string; answer: string; newPassword: string }; res: { ok: true; user: SafeUser } | { ok: false; error: string } };
   'license:status': { req: void; res: LicenseStatus };
   'license:machineCode': { req: void; res: { machineCode: string } };
   'license:hwInfo': { req: void; res: { machineCode: string; disk: string; board: string; cpu: string } };

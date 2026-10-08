@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decryptFile } from './secure-store.js';
 
 /**
  * SQLite data layer (better-sqlite3, WAL mode).
@@ -120,4 +121,42 @@ export function vaultOpenStrategy(workingDb: string, dbEnc: string): VaultOpenSt
   }
   if (encExists) return 'decrypt';
   return 'fresh';
+}
+
+/**
+ * Open the vault database with self-healing (used by login + setup).
+ *
+ * - 'fresh': nothing to decrypt; better-sqlite3 creates the file.
+ * - 'decrypt': stale -wal/-shm from a crashed session are dropped first —
+ *   opening a freshly decrypted file with a stale WAL throws SQLITE_CORRUPT.
+ * - 'use-working': the working copy is opened as-is; if it turns out to be
+ *   unreadable (torn write, garbage) AND a vault snapshot exists, we fall
+ *   back to the last known-good snapshot instead of hard-failing the login.
+ *   The corrupt working file is replaced atomically — never wiped blindly.
+ */
+export function openVaultDatabase(dataKey: Buffer, workingDb: string, dbEnc: string): void {
+  const strategy = vaultOpenStrategy(workingDb, dbEnc);
+  const dropStaleWal = () => {
+    try { fs.unlinkSync(workingDb + '-wal'); } catch { /* ignore */ }
+    try { fs.unlinkSync(workingDb + '-shm'); } catch { /* ignore */ }
+  };
+  if (strategy === 'decrypt') {
+    dropStaleWal();
+    decryptFile(dataKey, dbEnc, workingDb);
+  }
+  try {
+    openDatabase(workingDb);
+  } catch (e) {
+    const code = (e as { code?: unknown })?.code;
+    const raw = e instanceof Error ? e.message : String(e ?? '');
+    const looksCorrupt =
+      (typeof code === 'string' && code.startsWith('SQLITE_')) || /SQLITE_[A-Z_]+/.test(raw);
+    if (looksCorrupt && strategy !== 'decrypt' && fs.existsSync(dbEnc)) {
+      dropStaleWal();
+      decryptFile(dataKey, dbEnc, workingDb);
+      openDatabase(workingDb);
+      return;
+    }
+    throw e;
+  }
 }

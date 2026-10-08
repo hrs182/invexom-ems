@@ -8,7 +8,9 @@ import { getDb, integrityCheck, schemaVersion } from './services/database.js';
 import {
   createVault, unlockDataKey, addUserWrap, removeUserWrap, hashPassword,
   encryptFile, secureWipe, verifyPassword,
+  setRecoveryInfo, getRecoveryInfo, unlockWithRecovery,
 } from './services/secure-store.js';
+import { isRecoveryQuestionId } from '../shared/recovery.js';
 import { audit, recentAudit } from './services/audit.js';
 import {
   licenseStatus, activateLicense, clearLicense, machineCode, getHardwareBinding,
@@ -159,10 +161,15 @@ export function registerIpc(ctx: AppContext): void {
     const s = payload;
     if (!s.institution.name.trim()) throw new Error('institution-name-required');
     if (!s.admin.username.trim() || s.admin.password.length < 8) throw new Error('admin-credentials-invalid');
+    if (!s.recovery || !isRecoveryQuestionId(s.recovery.questionId)) throw new Error('recovery-question-required');
+    if (!s.recovery.answer || s.recovery.answer.trim().length < 3) throw new Error('recovery-answer-required');
 
     // 1. Create encrypted vault (key from admin password).
     const dataKey = createVault(ctx.paths.keymeta, s.admin.username.trim(), s.admin.password);
     ctx.dataKey = dataKey;
+    // Recovery wrap: the security answer can re-unwrap the same data key, so a
+    // forgotten password never means lost data.
+    setRecoveryInfo(ctx.paths.keymeta, dataKey, s.admin.username.trim(), s.recovery.questionId, s.recovery.question, s.recovery.answer);
 
     // 2. Fresh DB at working path + migrations.
     if (fs.existsSync(ctx.paths.workingDb)) secureWipe(ctx.paths.workingDb);
@@ -263,6 +270,47 @@ export function registerIpc(ctx: AppContext): void {
     if (ctx.dataKey) addUserWrap(ctx.paths.keymeta, ctx.dataKey, u.username, newPassword);
     audit(u, 'auth.changePassword', 'user', u.id);
     return { ok: true as const };
+  });
+
+  // ---- password recovery (security question set during setup) ----
+  on('auth:recoveryQuestion', async ({ username }) => {
+    // Works while the vault is locked: the question text is non-secret and
+    // lives in keymeta.json, outside the encrypted database.
+    const info = getRecoveryInfo(ctx.paths.keymeta, username.trim());
+    return { ok: true as const, question: info?.question ?? null };
+  });
+
+  on('auth:recoverAccess', async ({ username, answer, newPassword }) => {
+    const uname = username.trim();
+    if (!uname) throw new Error('unknown-user');
+    if (newPassword.length < 8) throw new Error('admin-credentials-invalid');
+    const info = getRecoveryInfo(ctx.paths.keymeta, uname);
+    if (!info) throw new Error('no-recovery');
+    let dataKey: Buffer;
+    try {
+      dataKey = unlockWithRecovery(ctx.paths.keymeta, uname, info.questionId, answer);
+    } catch (e) {
+      // Slow down brute-forcing of the answer (offline app, local attacker).
+      await new Promise((r) => setTimeout(r, 1500));
+      throw e;
+    }
+    if (!ctx.dataKey) {
+      ctx.openDatabaseWithKey(dataKey);
+      ctx.dataKey = dataKey;
+    }
+    // Replace the password wrap with the new password; the recovery wrap
+    // (user 'recovery:<name>') is untouched, so recovery keeps working.
+    addUserWrap(ctx.paths.keymeta, dataKey, uname, newPassword);
+    const row = getDb().prepare('SELECT id FROM users WHERE lower(username) = lower(?)').get(uname) as
+      | { id: number }
+      | undefined;
+    if (!row) throw new Error('unknown-user');
+    getDb().prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hashPassword(newPassword), row.id);
+    const user = verifyLogin(uname, newPassword);
+    if (!user) throw new Error('unexpected-error');
+    ctx.currentUser = user;
+    audit(user, 'auth.recover', 'user', user.id);
+    return { ok: true as const, user };
   });
 
   // ---- licensing ----

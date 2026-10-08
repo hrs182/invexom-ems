@@ -5,9 +5,15 @@ import { useApp } from '../../stores/app';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input, Textarea, Field } from '../../components/ui/input';
+import { Select } from '../../components/ui/select';
 import { Logo } from '../../components/ui/sidebar';
 import { ProgressBar, Alert } from '../../components/ui/feedback';
 import type { SetupPayload } from '@shared/types';
+import { RECOVERY_QUESTION_IDS } from '@shared/recovery';
+import type { DictPath } from '../../i18n/index';
+
+/** Label for a recovery question id (ids are stable; text is i18n). */
+const recoveryLabel = (id: string): string => t(`auth.${id}` as DictPath);
 
 const PRESET_HEADS = [
   { key: 'tuition', type: 'periodic' as const },
@@ -34,6 +40,7 @@ export function SetupWizard() {
     { name: 'I', sections: 'A, B' }, { name: 'II', sections: 'A, B' },
   ]);
   const [admin, setAdmin] = React.useState({ username: 'admin', displayName: 'Administrator', password: '', confirm: '' });
+  const [recovery, setRecovery] = React.useState<{ questionId: string; answer: string }>({ questionId: RECOVERY_QUESTION_IDS[0], answer: '' });
   const [heads, setHeads] = React.useState<{ name: string; type: 'one-time' | 'periodic' | 'optional'; on: boolean }[]>(
     PRESET_HEAD_NAMES.map((name, i) => ({ name, type: PRESET_HEADS[i].type, on: i < 3 })),
   );
@@ -45,7 +52,8 @@ export function SetupWizard() {
 
   const canNext = () => {
     if (step === 0) return institution.name.trim().length > 0;
-    if (step === 3) return admin.username.trim().length > 0 && admin.password.length >= 8 && admin.password === admin.confirm;
+    if (step === 3) return admin.username.trim().length > 0 && admin.password.length >= 8 && admin.password === admin.confirm
+      && recovery.questionId.length > 0 && recovery.answer.trim().length >= 3;
     return true;
   };
 
@@ -66,6 +74,11 @@ export function SetupWizard() {
         })),
         admin: { username: admin.username.trim(), displayName: admin.displayName.trim(), password: admin.password },
         feeHeads: heads.filter((h) => h.on && h.name.trim()).map((h) => ({ name: h.name.trim(), type: h.type, defaultAmount: 0 })),
+        recovery: {
+          questionId: recovery.questionId,
+          question: recoveryLabel(recovery.questionId),
+          answer: recovery.answer,
+        },
       };
       const r = await invoke('setup:complete', payload);
       // errText prefers the display-safe message; the raw technical detail
@@ -180,6 +193,21 @@ export function SetupWizard() {
               <Field label={t('auth.confirmPassword')} required error={admin.confirm && admin.confirm !== admin.password ? t('auth.passwordMismatch') : undefined}>
                 <Input type="password" value={admin.confirm} onChange={set(setAdmin, 'confirm')} />
               </Field>
+              <div className="rounded-xl border border-border bg-surface-2 p-4">
+                <p className="mb-3 text-sm font-medium">{t('auth.recoveryTitle')}</p>
+                <div className="flex flex-col gap-4">
+                  <Field label={t('auth.recoveryQuestion')} required>
+                    <Select
+                      value={recovery.questionId}
+                      onValueChange={(v) => setRecovery((p) => ({ ...p, questionId: v }))}
+                      options={RECOVERY_QUESTION_IDS.map((id) => ({ value: id, label: recoveryLabel(id) }))}
+                    />
+                  </Field>
+                  <Field label={t('auth.recoveryAnswer')} required hint={t('auth.recoveryHint')}>
+                    <Input value={recovery.answer} onChange={(e) => setRecovery((p) => ({ ...p, answer: e.target.value }))} autoComplete="off" />
+                  </Field>
+                </div>
+              </div>
             </div>
           )}
 
