@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decryptFile, withFileRetry } from './secure-store.js';
+import { decryptFile, secureWipe, withFileRetry } from './secure-store.js';
 
 /**
  * SQLite data layer (better-sqlite3, WAL mode).
@@ -45,6 +45,7 @@ export function closeDatabase(): void {
     try { db.close(); } catch { /* ignore */ }
     db = null;
   }
+  dbPath = '';
 }
 
 export function databaseFilePath(): string {
@@ -98,69 +99,157 @@ export function integrityCheck(): { ok: boolean; detail: string } {  try {
 }
 
 /**
- * How the encrypted vault should be opened. Pure and unit-tested.
+ * Session working files — the reliable replacement for a fixed working copy.
  *
- * - 'use-working': crash recovery — a surviving working file newer than the
- *   encrypted snapshot wins (WAL replay), so no data is lost.
- * - 'decrypt':     a vault snapshot exists — decrypt it to the working file.
- * - 'fresh':       no vault exists yet (first-time setup). There is nothing
- *                  to decrypt; better-sqlite3 creates the file on open.
- *                  (Previously this case fell through to decryptFile and
- *                  crashed with ENOENT on the missing .db.enc file.)
+ * Each app launch decrypts the vault to a UNIQUE file
+ * (working/session-<pid>-<timestamp>.db) instead of a fixed
+ * working/invexom-ems.db. Why this matters on Windows: the OS refuses to
+ * rename/replace a file that any process still has open (EPERM) — an
+ * antivirus scan, a lingering previous process, or a SQLite viewer could
+ * wedge the entire app when every launch fights over one fixed path.
+ * Unique session files never collide, so there is nothing to replace and
+ * EPERM-on-rename disappears as a failure class. Stale sessions are swept
+ * (best-effort) once the new session is open.
  */
-export type VaultOpenStrategy = 'use-working' | 'decrypt' | 'fresh';
+const SESSION_PREFIX = 'session-';
+/** Fixed working copy used by pre-session versions — a recovery candidate, then swept. */
+const LEGACY_WORKING = 'invexom-ems.db';
+/** Sweep spares files touched very recently — they may belong to a live process. */
+const SWEEP_GRACE_MS = 120_000;
 
-export function vaultOpenStrategy(workingDb: string, dbEnc: string): VaultOpenStrategy {
-  const workingExists = fs.existsSync(workingDb);
-  const encExists = fs.existsSync(dbEnc);
-  if (workingExists && encExists) {
-    try {
-      if (fs.statSync(workingDb).mtimeMs > fs.statSync(dbEnc).mtimeMs) return 'use-working';
-    } catch {
-      /* fall through to decrypt */
+let sessionSeq = 0;
+export function newSessionDbPath(workingDir: string): string {
+  // pid + timestamp + per-process counter + random: unique even for two
+  // calls in the same millisecond (the test caught a same-ms collision).
+  sessionSeq += 1;
+  const rand = Math.random().toString(36).slice(2, 8);
+  return path.join(workingDir, `${SESSION_PREFIX}${process.pid}-${Date.now()}-${sessionSeq}-${rand}.db`);
+}
+
+function statMtime(p: string): number | null {
+  try {
+    return fs.statSync(p).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** Session candidates: session-*.db plus the legacy fixed working file. */
+function sessionCandidates(workingDir: string): string[] {
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(workingDir);
+  } catch {
+    return [];
+  }
+  return files
+    .filter((f) => (f.startsWith(SESSION_PREFIX) && f.endsWith('.db')) || f === LEGACY_WORKING)
+    .map((f) => path.join(workingDir, f));
+}
+
+/**
+ * Crash recovery: the newest session file newer than the encrypted snapshot
+ * is the freshest copy (the app was killed mid-session). Returns null when
+ * there is nothing usable to recover.
+ */
+export function findCrashSession(workingDir: string, dbEnc: string): string | null {
+  const encMtime = fs.existsSync(dbEnc) ? statMtime(dbEnc) : 0;
+  let best: string | null = null;
+  let bestMtime = encMtime ?? 0;
+  for (const f of sessionCandidates(workingDir)) {
+    const m = statMtime(f);
+    if (m !== null && m > bestMtime) {
+      bestMtime = m;
+      best = f;
     }
   }
-  if (encExists) return 'decrypt';
-  return 'fresh';
+  return best;
+}
+
+/**
+ * Best-effort cleanup of stale session files. Locked or very recently
+ * touched files are left alone for a later boot — never force-delete
+ * something another live process might be using.
+ */
+export function sweepStaleSessions(workingDir: string, keepPath?: string): void {
+  const now = Date.now();
+  const keep = keepPath ? path.resolve(keepPath) : '';
+  for (const f of sessionCandidates(workingDir)) {
+    if (path.resolve(f) === keep) continue;
+    const m = statMtime(f);
+    if (m !== null && now - m < SWEEP_GRACE_MS) continue;
+    try {
+      fs.unlinkSync(`${f}-wal`);
+    } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(`${f}-shm`);
+    } catch { /* ignore */ }
+    try {
+      secureWipe(f);
+    } catch { /* locked — leave it for the next boot */ }
+  }
+}
+
+function dropStaleWal(dbFile: string): void {
+  try {
+    fs.unlinkSync(`${dbFile}-wal`);
+  } catch { /* ignore */ }
+  try {
+    fs.unlinkSync(`${dbFile}-shm`);
+  } catch { /* ignore */ }
+}
+
+function isSqliteError(e: unknown): boolean {
+  const code = (e as { code?: unknown })?.code;
+  const raw = e instanceof Error ? e.message : String(e ?? '');
+  return (typeof code === 'string' && code.startsWith('SQLITE_')) || /SQLITE_[A-Z_]+/.test(raw);
 }
 
 /**
  * Open the vault database with self-healing (used by login + setup).
  *
- * - 'fresh': nothing to decrypt; better-sqlite3 creates the file.
- * - 'decrypt': stale -wal/-shm from a crashed session are dropped first —
- *   opening a freshly decrypted file with a stale WAL throws SQLITE_CORRUPT.
- * - 'use-working': the working copy is opened as-is; if it turns out to be
- *   unreadable (torn write, garbage) AND a vault snapshot exists, we fall
- *   back to the last known-good snapshot instead of hard-failing the login.
- *   The corrupt working file is replaced atomically — never wiped blindly.
+ * - 'fresh':    no vault snapshot exists (first-time setup) — better-sqlite3
+ *               creates a brand-new session file.
+ * - 'recover':  a session file newer than the snapshot survived a crash —
+ *               it is opened as-is (WAL replay); if it turns out unreadable
+ *               AND a snapshot exists, we fall back to the last-good snapshot
+ *               instead of hard-failing the login.
+ * - 'decrypt':  normal unlock — the snapshot is decrypted to a unique
+ *               session file. No fixed path is ever replaced, so a stale
+ *               lock from another process cannot wedge the login.
  */
-export function openVaultDatabase(dataKey: Buffer, workingDb: string, dbEnc: string): void {
-  const strategy = vaultOpenStrategy(workingDb, dbEnc);
-  const dropStaleWal = () => {
-    try { fs.unlinkSync(workingDb + '-wal'); } catch { /* ignore */ }
-    try { fs.unlinkSync(workingDb + '-shm'); } catch { /* ignore */ }
-  };
-  if (strategy === 'decrypt') {
-    // Defensive: never rename over our own open handle (e.g. a previous
-    // partial attempt in this process left the DB open).
+export function openVaultDatabase(dataKey: Buffer, workingDir: string, dbEnc: string): void {
+  fs.mkdirSync(workingDir, { recursive: true });
+  const openFresh = (p: string) => {
     closeDatabase();
-    dropStaleWal();
-    decryptFile(dataKey, dbEnc, workingDb);
-  }
-  try {
-    openDatabase(workingDb);
-  } catch (e) {
-    const code = (e as { code?: unknown })?.code;
-    const raw = e instanceof Error ? e.message : String(e ?? '');
-    const looksCorrupt =
-      (typeof code === 'string' && code.startsWith('SQLITE_')) || /SQLITE_[A-Z_]+/.test(raw);
-    if (looksCorrupt && strategy !== 'decrypt' && fs.existsSync(dbEnc)) {
-      dropStaleWal();
-      decryptFile(dataKey, dbEnc, workingDb);
-      openDatabase(workingDb);
+    dropStaleWal(p);
+    openDatabase(p);
+  };
+
+  // 1. Crash recovery.
+  const crash = findCrashSession(workingDir, dbEnc);
+  if (crash) {
+    try {
+      openFresh(crash);
+      sweepStaleSessions(workingDir, crash);
       return;
+    } catch (e) {
+      if (!isSqliteError(e) || !fs.existsSync(dbEnc)) throw e;
+      // Corrupt crash copy — fall through and decrypt the last-good snapshot.
     }
-    throw e;
   }
+
+  // 2. Fresh install: nothing to decrypt.
+  if (!fs.existsSync(dbEnc)) {
+    const fresh = newSessionDbPath(workingDir);
+    openFresh(fresh);
+    sweepStaleSessions(workingDir, fresh);
+    return;
+  }
+
+  // 3. Normal unlock: decrypt to a unique session file.
+  const session = newSessionDbPath(workingDir);
+  decryptFile(dataKey, dbEnc, session);
+  openFresh(session);
+  sweepStaleSessions(workingDir, session);
 }

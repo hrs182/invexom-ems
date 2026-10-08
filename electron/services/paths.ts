@@ -22,8 +22,7 @@ export interface EmsPaths {
   dataDir: string;
   dbEnc: string; // AES-256-GCM encrypted database file (at rest)
   keymeta: string; // salt + per-user wrapped DB keys (no secrets in plain)
-  workingDir: string; // decrypted working copy while app runs
-  workingDb: string;
+  workingDir: string; // per-launch unique session DB files (see database.ts)
   backupsDir: string;
   assetsDir: string; // logos, etc.
   installJson: string; // install timestamp (demo clock)
@@ -37,7 +36,6 @@ export function emsPaths(): EmsPaths {
     dbEnc: path.join(dataDir, 'invexom-ems.db.enc'),
     keymeta: path.join(dataDir, 'keymeta.json'),
     workingDir,
-    workingDb: path.join(workingDir, 'invexom-ems.db'),
     backupsDir: path.join(dataDir, 'backups'),
     assetsDir: path.join(dataDir, 'assets'),
     installJson: path.join(dataDir, 'install.json'),

@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { IpcChannels, SafeUser, MasterKind } from '../shared/types.js';
 import { ensureDirs, type EmsPaths } from './services/paths.js';
 import { toUserError, errorDetail } from './services/errors.js';
-import { getDb, integrityCheck, schemaVersion } from './services/database.js';
+import { databaseFilePath, getDb, integrityCheck, schemaVersion, sweepStaleSessions } from './services/database.js';
 import {
   createVault, unlockDataKey, addUserWrap, removeUserWrap, hashPassword,
   encryptFile, secureWipe, verifyPassword,
@@ -171,8 +171,8 @@ export function registerIpc(ctx: AppContext): void {
     // forgotten password never means lost data.
     setRecoveryInfo(ctx.paths.keymeta, dataKey, s.admin.username.trim(), s.recovery.questionId, s.recovery.question, s.recovery.answer);
 
-    // 2. Fresh DB at working path + migrations.
-    if (fs.existsSync(ctx.paths.workingDb)) secureWipe(ctx.paths.workingDb);
+    // 2. Fresh DB in a new session file + migrations.
+    sweepStaleSessions(ctx.paths.workingDir);
     ctx.openDatabaseWithKey(dataKey);
     const db = getDb();
 
@@ -222,7 +222,7 @@ export function registerIpc(ctx: AppContext): void {
 
     // 4. Encrypt snapshot, audit, auto-login as admin.
     db.pragma('wal_checkpoint(TRUNCATE)');
-    encryptFile(dataKey, ctx.paths.workingDb, ctx.paths.dbEnc);
+    encryptFile(dataKey, databaseFilePath(), ctx.paths.dbEnc);
     const admin = verifyLogin(s.admin.username.trim(), s.admin.password);
     ctx.currentUser = admin;
     audit(admin, 'setup.complete', 'institution', 1, null, { name: s.institution.name });
@@ -491,7 +491,7 @@ export function registerIpc(ctx: AppContext): void {
   on('backup:now', async () => {
     const u = needWritable(ctx);
     if (!can(u, 'backup', 'edit')) throw new Error('forbidden');
-    const r = runBackup(ctx.paths, ctx.dataKey!, 'manual');
+    const r = runBackup({ ...ctx.paths, workingDb: databaseFilePath() }, ctx.dataKey!, 'manual');
     if (r.ok) audit(u, 'backup.manual', 'backup', 0, null, { path: r.path });
     return r.ok ? { ok: true as const, path: r.path } : { ok: false as const, error: r.error };
   });
@@ -500,7 +500,7 @@ export function registerIpc(ctx: AppContext): void {
     const u = needWritable(ctx);
     if (!can(u, 'backup', 'admin')) throw new Error('forbidden');
     verifyAdminPassword(ctx, adminPassword); // PERM-02
-    const r = restoreBackup(id, ctx.paths, ctx.dataKey!);
+    const r = restoreBackup(id, { ...ctx.paths, workingDb: databaseFilePath() }, ctx.dataKey!);
     if (r.ok) { audit(u, 'backup.restore', 'backup', id); ctx.relaunch(); }
     return r;
   });
@@ -518,7 +518,7 @@ export function registerIpc(ctx: AppContext): void {
   on('diagnostics:info', () => {
     needAuth(ctx);
     let dbSize = 0;
-    try { dbSize = fs.statSync(ctx.paths.workingDb).size; } catch { /* ignore */ }
+    try { dbSize = fs.statSync(databaseFilePath()).size; } catch { /* ignore */ }
     return {
       version: ctx.version,
       electronVersion: process.versions.electron ?? '',

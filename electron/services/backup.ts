@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getDb, closeDatabase } from './database.js';
+import { getDb, closeDatabase, newSessionDbPath } from './database.js';
 import type { BackupEntry } from '../../shared/types.js';
 import { decryptFile, encryptFile, secureWipe } from './secure-store.js';
 
@@ -123,11 +123,12 @@ export function restoreBackup(
     const snap = runBackup(paths, dataKey, 'pre-restore');
     if (!snap.ok) return { ok: false, error: `Safety snapshot failed: ${snap.error}` };
 
-    // 2. Close DB, replace encrypted snapshot, re-decrypt to working copy.
+    // 2. Close DB, replace encrypted snapshot, decrypt to a fresh session file.
+    //    The caller relaunches; boot picks the newest session (this one).
     closeDatabase();
     fs.copyFileSync(row.path, paths.dbEnc);
     secureWipe(paths.workingDb);
-    decryptFile(dataKey, paths.dbEnc, paths.workingDb);
+    decryptFile(dataKey, paths.dbEnc, newSessionDbPath(paths.workingDir));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

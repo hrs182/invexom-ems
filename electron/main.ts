@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDirs, type EmsPaths } from './services/paths.js';
-import { closeDatabase, getDb, openVaultDatabase } from './services/database.js';
+import { closeDatabase, databaseFilePath, getDb, openVaultDatabase } from './services/database.js';
 import { encryptFile, secureWipe } from './services/secure-store.js';
 import { schedulerTick } from './services/backup.js';
 import { registerIpc, type AppContext } from './ipc.js';
@@ -32,17 +32,20 @@ const ctx: AppContext = {
   demoBuild: buildInfo.demoBuild,
   version: buildInfo.version,
   openDatabaseWithKey: (key: Buffer) => {
-    openVaultDatabase(key, ctx.paths.workingDb, ctx.paths.dbEnc);
+    openVaultDatabase(key, ctx.paths.workingDir, ctx.paths.dbEnc);
   },
   lockVault: () => {
     try {
       // Flush + re-encrypt + wipe the working copy (NFR-S-03).
+      // The working copy is a per-launch session file — capture its path
+      // before closing (closeDatabase clears the tracked path).
+      const liveDb = databaseFilePath();
       try { getDb().pragma('wal_checkpoint(TRUNCATE)'); } catch { /* DB not open */ }
-      if (ctx.dataKey && fs.existsSync(ctx.paths.workingDb)) {
-        encryptFile(ctx.dataKey, ctx.paths.workingDb, ctx.paths.dbEnc);
-        secureWipe(ctx.paths.workingDb);
-        try { fs.unlinkSync(ctx.paths.workingDb + '-wal'); } catch { /* ignore */ }
-        try { fs.unlinkSync(ctx.paths.workingDb + '-shm'); } catch { /* ignore */ }
+      if (ctx.dataKey && liveDb && fs.existsSync(liveDb)) {
+        encryptFile(ctx.dataKey, liveDb, ctx.paths.dbEnc);
+        secureWipe(liveDb);
+        try { fs.unlinkSync(liveDb + '-wal'); } catch { /* ignore */ }
+        try { fs.unlinkSync(liveDb + '-shm'); } catch { /* ignore */ }
       }
     } catch { /* ignore */ }
     closeDatabase();
@@ -103,7 +106,7 @@ app.whenReady().then(() => {
   // Backup scheduler tick (every minute).
   setInterval(() => {
     try {
-      if (ctx.dataKey) schedulerTick(ctx.paths, ctx.dataKey);
+      if (ctx.dataKey) schedulerTick({ ...ctx.paths, workingDb: databaseFilePath() }, ctx.dataKey);
     } catch { /* scheduler must never crash the app */ }
   }, 60_000);
 

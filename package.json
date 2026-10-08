@@ -12,9 +12,10 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tailwind-merge": "3.7.0",
+    "ws": "^8.22.0",
     "zustand": "5.0.15"
   },
-  "description": "Invexom EMS \u2014 Education Management System. Fully offline, one-time-license school management software for schools, academies and coaching centers.",
+  "description": "Invexom EMS — Education Management System. Fully offline, one-time-license school management software for schools, academies and coaching centers.",
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@types/better-sqlite3": "^9.6.0",
@@ -54,7 +55,7 @@
   "build": {
     "appId": "com.invexom.ems",
     "productName": "Invexom EMS",
-    "copyright": "Copyright \u00a9 2026 Invexom",
+    "copyright": "Copyright © 2026 Invexom",
     "directories": {
       "output": "dist-installer"
     },
