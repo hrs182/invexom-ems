@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
+import { ipcMain, dialog, shell, BrowserWindow } from './services/electron-shim.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IpcChannels, SafeUser, MasterKind } from '../shared/types.js';
@@ -19,16 +19,21 @@ import {
 import {
   runBackup, listBackups, restoreBackup, getBackupConfig, setBackupConfig, backupHealth,
 } from './services/backup.js';
+import {
+  driveStatus, driveConnect, driveDisconnect, driveUploadBackup, driveListBackups,
+  driveDownloadBackup, getDriveClientId, setDriveClientId,
+} from './services/drive.js';
 import { nextNumber, listNumbering, setPattern } from './services/numbering.js';
 import { verifyLogin, listUsers, createUser, listRoles, saveRole, seedRoles, can } from './services/users.js';
 import { seedSetupMasters } from './services/setup.js';
+import { assertSubjectNameAvailable, setSubjectsClass } from './services/masters.js';
 import { checkForUpdates } from './services/updater.js';
 import {
   listStudents, getStudent, createStudent, updateStudent, changeStudentStatus,
   promoteStudents, tcEligibility, issueTC, setDocuments, admissionRegister,
 } from './services/students.js';
 import {
-  listFeeStructure, saveFeeStructure, copyFeeStructure, generateDues, listDues,
+  listFeeStructure, saveFeeStructure, copyFeeStructure, generateDues, listDues, syncDuesToHeads,
   collectFee, listReceipts, getReceipt, cancelReceipt, chequeBounce, defaulters, discountRegister,
 } from './services/fees.js';
 import {
@@ -40,7 +45,8 @@ import { REPORTS, runReport } from './services/reports.js';
 import { exportExcel, exportEverything } from './services/export.js';
 import { postFeeVoucher } from './services/accounting.js';
 import {
-  listExams, createExam, saveExamSubjects, listExamSubjects, saveDatesheet, listDatesheet,
+  listExams, createExam, saveExamSubjects, listExamSubjects, updateExamSubject, deleteExamSubject,
+  listUsedSubjects, saveDatesheet, listDatesheet,
   saveMarks, getMarks, computeResults, lockExam, unlockExam, resultAnalysis,
   listTemplates, saveTemplate, createGatepass, listGatepasses,
 } from './services/exams.js';
@@ -78,6 +84,8 @@ export interface AppContext {
   currentUser: SafeUser | null;
   demoBuild: boolean;
   version: string;
+  /** True when running under the web-demo server (no Electron APIs). */
+  webMode: boolean;
   openDatabaseWithKey: (key: Buffer) => void;
   lockVault: () => void;
   relaunch: () => void;
@@ -87,6 +95,22 @@ type Handler<K extends keyof IpcChannels> = (
   req: IpcChannels[K]['req'],
   ctx: AppContext,
 ) => Promise<IpcChannels[K]['res']> | IpcChannels[K]['res'];
+
+/**
+ * Handler-table builder with an injectable transport.
+ * The Electron app passes an `on` wired to ipcMain; the web-demo server
+ * passes one wired to Express routes — both run the SAME 158 handlers.
+ */
+export type IpcOn = <K extends keyof IpcChannels>(channel: K, handler: Handler<K>) => void;
+
+/** Shared shape for a failed handler call (used by both transports). */
+export function ipcErrorPayload(e: unknown): { ok: false; error: string; errorMessage: string; errorDetail: string } {
+  // Never leak raw system errors (ENOENT, SQLITE_*, paths, stacks) to
+  // the UI. `error` stays a stable machine-readable code (the renderer
+  // branches on well-known codes); `errorMessage` is display-safe.
+  const ue = toUserError(e);
+  return { ok: false as const, error: ue.code, errorMessage: ue.message, errorDetail: errorDetail(e) };
+}
 
 function needAuth(ctx: AppContext): SafeUser {
   if (!ctx.currentUser || !ctx.dataKey) throw new Error('not-authenticated');
@@ -114,26 +138,7 @@ function verifyAdminPassword(ctx: AppContext, password: string): void {
   if (!admin || !verifyPassword(password, admin.password_hash)) throw new Error('admin-password-invalid');
 }
 
-export function registerIpc(ctx: AppContext): void {
-  const on = <K extends keyof IpcChannels>(channel: K, handler: Handler<K>) => {
-    ipcMain.handle(channel, async (_e, req) => {
-      try {
-        return await handler(req, ctx);
-      } catch (e) {
-        // Never leak raw system errors (ENOENT, SQLITE_*, paths, stacks) to
-        // the UI. `error` stays a stable machine-readable code (the renderer
-        // branches on well-known codes); `errorMessage` is display-safe.
-        const ue = toUserError(e);
-        return {
-          ok: false as const,
-          error: ue.code,
-          errorMessage: ue.message,
-          errorDetail: errorDetail(e),
-        } as unknown as IpcChannels[K]['res'];
-      }
-    });
-  };
-
+export function buildIpcHandlers(on: IpcOn, ctx: AppContext): void {
   // ---- app ----
   on('app:status', () => {
     const needsSetup = !fs.existsSync(ctx.paths.dbEnc);
@@ -145,7 +150,7 @@ export function registerIpc(ctx: AppContext): void {
       needsSetup,
       dataDir: ctx.paths.dataDir,
       license: licenseStatusSafe(ctx),
-      backupHealth: ctx.dataKey ? backupHealth() : { lastBackupAt: null, overdue: true, autoEnabled: true, scheduledTime: '20:00' },
+      backupHealth: ctx.dataKey ? backupHealth() : { lastBackupAt: null, overdue: true, autoEnabled: true, scheduledTime: '20:00', daysSinceBackup: null, reminderDays: 7 },
     };
   });
 
@@ -374,16 +379,26 @@ export function registerIpc(ctx: AppContext): void {
   on('settings:sessions:list', () => {
     needAuth(ctx);
     return getDb().prepare(
-      'SELECT id, name, start_date AS startDate, end_date AS endDate, is_active AS isActive, is_locked AS isLocked FROM sessions ORDER BY start_date DESC',
+      'SELECT id, name, start_date AS startDate, end_date AS endDate, is_active AS isActive, is_locked AS isLocked, fee_start_month AS feeStartMonth FROM sessions ORDER BY start_date DESC',
     ).all() as never;
   });
 
-  on('settings:sessions:create', async ({ name, startDate, endDate }) => {
+  on('settings:sessions:create', async ({ name, startDate, endDate, feeStartMonth }) => {
     const u = needWritable(ctx);
     if (!can(u, 'settings', 'admin')) throw new Error('forbidden');
-    const r = getDb().prepare('INSERT INTO sessions (name, start_date, end_date) VALUES (?, ?, ?)').run(name.trim(), startDate, endDate);
+    const fsm = feeStartMonth || startDate.slice(0, 7);
+    const r = getDb().prepare('INSERT INTO sessions (name, start_date, end_date, fee_start_month) VALUES (?, ?, ?, ?)').run(name.trim(), startDate, endDate, fsm);
     audit(u, 'settings.session.create', 'session', Number(r.lastInsertRowid), null, { name });
     return { ok: true as const, id: Number(r.lastInsertRowid) };
+  });
+
+  on('settings:sessions:update', async ({ id, feeStartMonth }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'settings', 'admin')) throw new Error('forbidden');
+    if (!/^\d{4}-\d{2}$/.test(feeStartMonth)) throw new Error('invalid-month');
+    getDb().prepare('UPDATE sessions SET fee_start_month = ? WHERE id = ?').run(feeStartMonth, id);
+    audit(u, 'settings.session.update', 'session', id, null, { feeStartMonth });
+    return { ok: true as const };
   });
 
   // ---- masters ----
@@ -394,19 +409,84 @@ export function registerIpc(ctx: AppContext): void {
     return getDb().prepare("SELECT id, name, extra FROM masters WHERE kind = ? AND is_active = 1 ORDER BY sort_order, name")
       .all(kind) as never;
   });
-  on('masters:add', async ({ kind, name }) => {
+
+  // One-click fix for subjects saved before per-class subjects existed:
+  // assigns legacy global subjects (no class) to the chosen class.
+  on('masters:subjects:set-class', async ({ ids, className }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'settings', 'edit')) throw new Error('forbidden');
+    const moved = setSubjectsClass(ids, className);
+    audit(u, 'masters.subjects.set-class', 'master:subject', 0, null, { className, moved });
+    return { ok: true as const, moved };
+  });
+  on('masters:add', async ({ kind, name, extra }) => {
     const u = needWritable(ctx);
     if (!can(u, 'settings', 'edit')) throw new Error('forbidden');
     if (!name.trim()) throw new Error('name-required');
-    const r = getDb().prepare('INSERT INTO masters (kind, name) VALUES (?, ?)').run(kind, name.trim());
-    audit(u, 'masters.add', `master:${kind}`, Number(r.lastInsertRowid), null, { name });
-    return { ok: true as const, id: Number(r.lastInsertRowid) };
+    const ex = extra ?? '{}';
+    const db = getDb();
+    // Sections: same name allowed in different classes (DB unique is on kind,name,extra).
+    // Subjects: saved per class — same name allowed in different classes, unique within a class.
+    // Other kinds: names unique globally regardless of extra.
+    if (kind === 'subject') {
+      assertSubjectNameAvailable(name, ex);
+    } else if (kind !== 'section') {
+      const dup = db.prepare('SELECT id FROM masters WHERE kind = ? AND LOWER(name) = LOWER(?) AND is_active = 1')
+        .get(kind, name.trim()) as { id: number } | undefined;
+      if (dup) throw new Error('name-exists');
+    }
+    try {
+      const r = db.prepare('INSERT INTO masters (kind, name, extra) VALUES (?, ?, ?)')
+        .run(kind, name.trim(), ex);
+      audit(u, 'masters.add', `master:${kind}`, Number(r.lastInsertRowid), null, { name });
+      return { ok: true as const, id: Number(r.lastInsertRowid) };
+    } catch (e) {
+      if (e instanceof Error && /UNIQUE constraint failed/.test(e.message)) {
+        throw new Error(kind === 'section' ? 'section-exists' : 'name-exists');
+      }
+      throw e;
+    }
   });
   on('masters:rename', async ({ kind, id, name }) => {
     const u = needWritable(ctx);
     if (!can(u, 'settings', 'edit')) throw new Error('forbidden');
-    getDb().prepare('UPDATE masters SET name = ? WHERE id = ? AND kind = ?').run(name.trim(), id, kind);
+    const db = getDb();
+    const old = db.prepare('SELECT name FROM masters WHERE id = ? AND kind = ?').get(id, kind) as { name: string } | undefined;
+    db.prepare('UPDATE masters SET name = ? WHERE id = ? AND kind = ?').run(name.trim(), id, kind);
+    // If a class is renamed, update the linked sections' extra JSON too.
+    if (kind === 'class' && old && old.name !== name.trim()) {
+      const secs = db.prepare("SELECT id, extra FROM masters WHERE kind = 'section' AND is_active = 1").all() as { id: number; extra: string }[];
+      const upd = db.prepare('UPDATE masters SET extra = ? WHERE id = ?');
+      for (const s of secs) {
+        try {
+          const ex = JSON.parse(s.extra || '{}');
+          if (ex.class === old.name) { ex.class = name.trim(); upd.run(JSON.stringify(ex), s.id); }
+        } catch { /* ignore bad JSON */ }
+      }
+    }
     audit(u, 'masters.rename', `master:${kind}`, id, null, { name });
+    return { ok: true as const };
+  });
+  on('masters:reorder', async ({ kind, id, direction }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'settings', 'edit')) throw new Error('forbidden');
+    const db = getDb();
+    // Normalize sort_order, then swap with the neighbor in the given direction.
+    const rows = db.prepare('SELECT id, sort_order FROM masters WHERE kind = ? AND is_active = 1 ORDER BY sort_order, id').all(kind) as { id: number; sort_order: number }[];
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx < 0) throw new Error('not-found');
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= rows.length) return { ok: true as const }; // already at edge
+    const txn = db.transaction(() => {
+      // Ensure dense ordering first
+      const norm = db.prepare('UPDATE masters SET sort_order = ? WHERE id = ?');
+      rows.forEach((r, i) => norm.run(i, r.id));
+      // Swap the two
+      norm.run(swapIdx, rows[idx].id);
+      norm.run(idx, rows[swapIdx].id);
+    });
+    txn();
+    audit(u, 'masters.reorder', `master:${kind}`, id, null, { direction });
     return { ok: true as const };
   });
   on('masters:remove', async ({ kind, id }) => {
@@ -496,6 +576,26 @@ export function registerIpc(ctx: AppContext): void {
     return r.ok ? { ok: true as const, path: r.path } : { ok: false as const, error: r.error };
   });
   on('backup:list', () => { needAuth(ctx); return listBackups(); });
+  on('backup:download', async () => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'edit')) throw new Error('forbidden');
+    const r = runBackup({ ...ctx.paths, workingDb: databaseFilePath() }, ctx.dataKey!, 'manual');
+    if (!r.ok) return r;
+    const { dialog: dlg, BrowserWindow: BW } = await import('electron');
+    const win = BW.getFocusedWindow();
+    const d = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const fileName = `Invexom-EMS-Backup-${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}.db.enc`;
+    const s = await dlg.showSaveDialog(win ?? undefined as never, {
+      title: 'Download backup',
+      defaultPath: fileName,
+      filters: [{ name: 'EMS backup', extensions: ['enc'] }],
+    });
+    if (s.canceled || !s.filePath) return { ok: false as const, error: 'cancelled' };
+    fs.copyFileSync(r.path, s.filePath);
+    audit(u, 'backup.download', 'backup', 0, null, { filePath: s.filePath });
+    return { ok: true as const, filePath: s.filePath };
+  });
   on('backup:restore', async ({ id, adminPassword }) => {
     const u = needWritable(ctx);
     if (!can(u, 'backup', 'admin')) throw new Error('forbidden');
@@ -513,6 +613,46 @@ export function registerIpc(ctx: AppContext): void {
     return { ok: true as const };
   });
   on('backup:health', () => backupHealth());
+
+  // ---- Google Drive backup (opt-in online feature) ----
+  on('drive:status', () => { needAuth(ctx); return driveStatus(); });
+  on('drive:clientId:get', () => { needAuth(ctx); return { clientId: getDriveClientId() }; });
+  on('drive:clientId:set', async ({ clientId }: { clientId: string }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'admin')) throw new Error('forbidden');
+    setDriveClientId(clientId);
+    audit(u, 'drive.clientId', 'backup', 0);
+    return { ok: true as const };
+  });
+  on('drive:connect', async () => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'edit')) throw new Error('forbidden');
+    const r = await driveConnect();
+    if (r.ok) audit(u, 'drive.connect', 'backup', 0, null, { email: r.email });
+    return r;
+  });
+  on('drive:disconnect', async () => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'edit')) throw new Error('forbidden');
+    driveDisconnect();
+    audit(u, 'drive.disconnect', 'backup', 0);
+    return { ok: true as const };
+  });
+  on('drive:upload', async () => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'edit')) throw new Error('forbidden');
+    const r = await driveUploadBackup({ ...ctx.paths, workingDb: databaseFilePath() }, ctx.dataKey!);
+    if (r.ok) audit(u, 'drive.upload', 'backup', 0, null, { fileName: r.fileName });
+    return r;
+  });
+  on('drive:list', async () => { needAuth(ctx); return driveListBackups(); });
+  on('drive:download', async ({ id, name }: { id: string; name: string }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'backup', 'admin')) throw new Error('forbidden');
+    const r = await driveDownloadBackup(id, name, ctx.paths.backupsDir);
+    if (r.ok) audit(u, 'drive.download', 'backup', 0, null, { name });
+    return r;
+  });
 
   // ---- diagnostics / audit / search ----
   on('diagnostics:info', () => {
@@ -614,7 +754,14 @@ export function registerIpc(ctx: AppContext): void {
     const count = generateDues(sessionId, monthLabel, u);
     return { ok: true as const, count };
   });
-  on('fees:dues:list', ({ studentId }) => { needAuth(ctx); return listDues(studentId); });
+  on('fees:dues:list', ({ studentId, monthLabels, carryForward }) => { needAuth(ctx); return listDues(studentId, monthLabels, carryForward); });
+  on('fees:dues:sync', async ({ studentId, sessionId, monthLabels, heads }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'fees', 'edit')) throw new Error('forbidden');
+    syncDuesToHeads(studentId, sessionId, monthLabels, heads);
+    audit(u, 'fees.dues.sync', 'fee-dues', studentId, null, { monthLabels });
+    return { ok: true as const };
+  });
   on('fees:collect', async (input) => {
     const u = needWritable(ctx);
     if (!can(u, 'fees', 'edit')) throw new Error('forbidden');
@@ -710,17 +857,30 @@ export function registerIpc(ctx: AppContext): void {
     return { ok: true as const, id: createExam({ name, term, session_id: sessionId, classes }, u) };
   });
   on('exams:subjects:list', ({ examId }) => { needAuth(ctx); return listExamSubjects(examId); });
+  on('exams:subjects:used', ({ className }) => { needAuth(ctx); return listUsedSubjects(className); });
   on('exams:subjects:save', async ({ examId, subjects }) => {
     const u = needWritable(ctx);
     if (!can(u, 'exams', 'edit')) throw new Error('forbidden');
     saveExamSubjects(examId, subjects, u);
     return { ok: true as const };
   });
-  on('exams:datesheet:list', ({ examId }) => { needAuth(ctx); return listDatesheet(examId); });
-  on('exams:datesheet:save', async ({ examId, rows }) => {
+  on('exams:subjects:update', async ({ id, subject, max_marks, pass_marks, weightage }) => {
     const u = needWritable(ctx);
     if (!can(u, 'exams', 'edit')) throw new Error('forbidden');
-    const { clashes } = saveDatesheet(examId, rows, u);
+    updateExamSubject(id, { subject, max_marks, pass_marks, weightage }, u);
+    return { ok: true as const };
+  });
+  on('exams:subjects:delete', async ({ id }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'exams', 'edit')) throw new Error('forbidden');
+    deleteExamSubject(id, u);
+    return { ok: true as const };
+  });
+  on('exams:datesheet:list', ({ examId }) => { needAuth(ctx); return listDatesheet(examId); });
+  on('exams:datesheet:save', async ({ examId, className, rows }) => {
+    const u = needWritable(ctx);
+    if (!can(u, 'exams', 'edit')) throw new Error('forbidden');
+    const { clashes } = saveDatesheet(examId, className, rows, u);
     return { ok: true as const, clashes };
   });
   on('exams:marks:get', ({ examId, subject, className }) => { needAuth(ctx); return getMarks(examId, subject, className); });
@@ -838,18 +998,28 @@ export function registerIpc(ctx: AppContext): void {
     const u = needAuth(ctx);
     if (!can(u, 'accounting', 'print')) throw new Error('forbidden');
     const xml = tallyExport(from, to);
+    const fileName = `tally-export-${from}-${to}.xml`;
+    if (ctx.webMode) {
+      // Browser download instead of a native save dialog.
+      return {
+        ok: true as const,
+        fileName,
+        mime: 'text/xml',
+        dataBase64: Buffer.from(xml, 'utf8').toString('base64'),
+      };
+    }
     // Save via dialog in main (same pattern as Excel export)
     const { dialog: dlg, BrowserWindow: BW } = await import('electron');
     const win = BW.getFocusedWindow();
     const r = await dlg.showSaveDialog(win ?? undefined as never, {
       title: 'Tally export (XML)',
-      defaultPath: `tally-export-${from}-${to}.xml`,
+      defaultPath: fileName,
       filters: [{ name: 'Tally XML', extensions: ['xml'] }],
     });
     if (r.canceled || !r.filePath) return { ok: false as const, error: 'cancelled' };
     const { default: fs } = await import('node:fs');
     fs.writeFileSync(r.filePath, xml, 'utf8');
-    return { ok: true as const, xml: r.filePath };
+    return { ok: true as const, filePath: r.filePath };
   });
 
   // ---- Milestone 4: inventory ----
@@ -997,14 +1167,31 @@ export function registerIpc(ctx: AppContext): void {
   on('analytics:alerts', () => { needAuth(ctx); return smartAlerts(); });
   on('analytics:birthdays', () => { needAuth(ctx); return birthdays(); });
 
-  // Native dialogs (used by license activation + logo upload + backup restore)
-  ipcMain.handle('dialog:openFile', async (_e, opts: { title: string; filters: { name: string; extensions: string[] }[] }) => {
-    const win = BrowserWindow.getFocusedWindow();
-    const options = { title: opts.title, filters: opts.filters, properties: ['openFile' as const] };
-    const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
-    return r.canceled ? null : r.filePaths[0];
-  });
-  ipcMain.handle('dialog:openExternal', async (_e, url: string) => { await shell.openExternal(url); });
+  // Native dialogs (used by license activation + logo upload + backup restore).
+  // Electron only: the web demo uses a browser file picker instead (see webPickFile).
+  if (!ctx.webMode) {
+    ipcMain.handle('dialog:openFile', async (_e, opts: { title: string; filters: { name: string; extensions: string[] }[] }) => {
+      const win = BrowserWindow.getFocusedWindow();
+      const options = { title: opts.title, filters: opts.filters, properties: ['openFile' as const] };
+      const r = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled ? null : r.filePaths[0];
+    });
+    ipcMain.handle('dialog:openExternal', async (_e, url: string) => { await shell.openExternal(url); });
+  }
+}
+
+/** Electron transport: wire the shared handler table to ipcMain. */
+export function registerIpc(ctx: AppContext): void {
+  const on: IpcOn = (channel, handler) => {
+    ipcMain.handle(channel, async (_e, req) => {
+      try {
+        return await handler(req, ctx);
+      } catch (e) {
+        return ipcErrorPayload(e) as never;
+      }
+    });
+  };
+  buildIpcHandlers(on, ctx);
 }
 
 function licenseStatusSafe(ctx: AppContext) {

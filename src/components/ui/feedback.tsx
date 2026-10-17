@@ -88,3 +88,8 @@ export function ProgressBar({ value, className }: { value: number; className?: s
     </div>
   );
 }
+
+/** Small muted help line at the bottom of a tab, explaining terms shown above. */
+export function TabFooter({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <p className={cn('mt-4 border-t border-border pt-3 text-xs leading-relaxed text-muted', className)}>{children}</p>;
+}

@@ -34,8 +34,14 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
 );
 Textarea.displayName = 'Textarea';
 
-export function Label({ className, ...rest }: React.LabelHTMLAttributes<HTMLLabelElement>) {
-  return <label className={cn('mb-1.5 block text-[13px] font-medium text-text', className)} {...rest} />;
+export function Label({ className, optional, required, children, ...rest }: React.LabelHTMLAttributes<HTMLLabelElement> & { optional?: boolean; required?: boolean }) {
+  return (
+    <label className={cn('mb-1.5 block text-[13px] font-medium text-text', className)} {...rest}>
+      {children}
+      {required && <span className="text-danger" aria-hidden> *</span>}
+      {optional && <span className="ml-1 font-normal text-faint">({t('common.optional')})</span>}
+    </label>
+  );
 }
 
 /** Label + control + optional hint/error, with comfortable max width. */

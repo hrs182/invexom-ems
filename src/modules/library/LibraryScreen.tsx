@@ -8,6 +8,7 @@ import { Select } from '../../components/ui/select';
 import { Tabs } from '../../components/ui/primitives';
 import { DataTable, type Column } from '../../components/ui/data-table';
 import { Dialog } from '../../components/ui/dialog';
+import { downloadExcel } from '../../lib/exportExcel';
 import { Badge } from '../../components/ui/badge';
 
 const T = (k: string, v?: Record<string, string | number>) => t(`modules.library.${k}` as never, v);
@@ -21,6 +22,18 @@ function CatalogTab() {
   const [issueForm, setIssueForm] = React.useState({ memberType: 'student', memberId: '', dueDays: 14 });
   const load = async () => setRows(await invoke('library:books', { q }));
   React.useEffect(() => { void load(); }, []);
+
+  const exportExcel = () => {
+    downloadExcel(`library-catalog-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Books',
+      rows: rows.map((r) => ({
+        'Title': r.title, 'Author': r.author ?? '',
+        'ISBN': r.isbn ?? '', 'Category': r.category ?? '',
+        'Rack': r.rack_no ?? '', 'Available': r.available_copies,
+        'Total Copies': r.total_copies,
+      })),
+    }]);
+  };
   const cols: Column<any>[] = React.useMemo(() => [
     { key: 'title', header: T('title'), render: (r) => <strong>{r.title}</strong> },
     { key: 'author', header: T('author'), render: (r) => r.author ?? '—' },
@@ -52,7 +65,10 @@ function CatalogTab() {
     <div>
       <div className="mb-3 flex items-center justify-between gap-2">
         <Input className="max-w-xs" placeholder={T('searchPh')} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} />
-        <Button onClick={() => { setForm({}); setOpen(true); }}>{T('addBook')}</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={() => { setForm({}); setOpen(true); }}>{T('addBook')}</Button>
+        </div>
       </div>
       {rows.length === 0 ? <EmptyState title={T('noBooks')} /> : <DataTable columns={cols} rows={rows} empty={T('noBooks')} />}
       <Dialog open={open} onOpenChange={setOpen} title={form.id ? T('edit') : T('addBook')}>

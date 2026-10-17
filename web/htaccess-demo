@@ -1,0 +1,15 @@
+# Invexom EMS browser demo — Apache configuration
+# Ensures .wasm files are served with the correct MIME type so browsers can
+# use streaming WebAssembly compilation (faster startup).
+
+<IfModule mod_mime.c>
+  AddType application/wasm .wasm
+</IfModule>
+
+# Cache static assets aggressively; index.html stays fresh.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType application/wasm "access plus 1 year"
+  ExpiresByType application/javascript "access plus 1 year"
+  ExpiresByType text/css "access plus 1 year"
+</IfModule>

@@ -55,6 +55,15 @@ export interface BackupHealth {
   overdue: boolean;
   autoEnabled: boolean;
   scheduledTime: string;
+  daysSinceBackup: number | null;
+  reminderDays: number;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  size: string;
+  createdTime: string;
 }
 
 export interface SetupPayload {
@@ -85,7 +94,7 @@ export interface InstitutionProfile {
 
 export interface SessionRow {
   id: number; name: string; startDate: string; endDate: string;
-  isActive: boolean; isLocked: boolean;
+  isActive: boolean; isLocked: boolean; feeStartMonth: string;
 }
 
 export interface MasterItem { id: number; name: string; extra?: Record<string, unknown> }
@@ -127,6 +136,13 @@ export interface AuditEntry {
 }
 
 /** Typed IPC channel map: request -> response. */
+/** File-export result. Desktop returns a saved filePath (save dialog);
+ * the web demo returns a browser download (fileName + base64 payload). */
+export type ExportResult =
+  | { ok: true; filePath: string }
+  | { ok: true; fileName: string; mime: string; dataBase64: string }
+  | { ok: false; error: string };
+
 export interface IpcChannels {
   'app:status': { req: void; res: AppStatus };
   'app:checkForUpdates': { req: void; res: { available: boolean; version?: string; url?: string; notes?: string; error?: string } };
@@ -146,11 +162,14 @@ export interface IpcChannels {
   'settings:institution:get': { req: void; res: InstitutionProfile };
   'settings:institution:set': { req: Partial<InstitutionProfile>; res: { ok: true } | { ok: false; error: string } };
   'settings:sessions:list': { req: void; res: SessionRow[] };
-  'settings:sessions:create': { req: { name: string; startDate: string; endDate: string }; res: { ok: true; id: number } | { ok: false; error: string } };
+  'settings:sessions:update': { req: { id: number; feeStartMonth: string }; res: { ok: true } | { ok: false; error: string } };
+  'settings:sessions:create': { req: { name: string; startDate: string; endDate: string; feeStartMonth?: string }; res: { ok: true; id: number } | { ok: false; error: string } };
   'masters:list': { req: { kind: MasterKind }; res: MasterItem[] };
-  'masters:add': { req: { kind: MasterKind; name: string }; res: { ok: true; id: number } | { ok: false; error: string } };
+  'masters:add': { req: { kind: MasterKind; name: string; extra?: string }; res: { ok: true; id: number } | { ok: false; error: string } };
   'masters:rename': { req: { kind: MasterKind; id: number; name: string }; res: { ok: true } | { ok: false; error: string } };
   'masters:remove': { req: { kind: MasterKind; id: number }; res: { ok: true } | { ok: false; error: string } };
+  'masters:reorder': { req: { kind: MasterKind; id: number; direction: 'up' | 'down' }; res: { ok: true } | { ok: false; error: string } };
+  'masters:subjects:set-class': { req: { ids: number[]; className: string }; res: { ok: true; moved: number } | { ok: false; error: string } };
   'numbering:list': { req: void; res: NumberingPattern[] };
   'numbering:set': { req: { key: string; pattern: string }; res: { ok: true } | { ok: false; error: string } };
   'rules:get': { req: void; res: Record<string, string> };
@@ -162,11 +181,20 @@ export interface IpcChannels {
   'roles:list': { req: void; res: RoleRow[] };
   'roles:save': { req: { id?: number; name: string; permissions: Record<ModuleKey, PermissionLevel> }; res: { ok: true; id: number } | { ok: false; error: string } };
   'backup:now': { req: void; res: { ok: true; path: string } | { ok: false; error: string } };
+  'backup:download': { req: void; res: { ok: true; filePath: string } | { ok: false; error: string } };
   'backup:list': { req: void; res: BackupEntry[] };
   'backup:restore': { req: { id: number; adminPassword: string }; res: { ok: true } | { ok: false; error: string } };
-  'backup:config:get': { req: void; res: { enabled: boolean; time: string; keepLast: number; usbPath: string } };
-  'backup:config:set': { req: { enabled: boolean; time: string; keepLast: number; usbPath: string }; res: { ok: true } | { ok: false; error: string } };
+  'backup:config:get': { req: void; res: { enabled: boolean; time: string; keepLast: number; usbPath: string; reminderDays: number } };
+  'backup:config:set': { req: { enabled: boolean; time: string; keepLast: number; usbPath: string; reminderDays: number }; res: { ok: true } | { ok: false; error: string } };
   'backup:health': { req: void; res: BackupHealth };
+  'drive:status': { req: void; res: { connected: boolean; email?: string; clientIdSet: boolean } };
+  'drive:clientId:get': { req: void; res: { clientId: string } };
+  'drive:clientId:set': { req: { clientId: string }; res: { ok: true } | { ok: false; error: string } };
+  'drive:connect': { req: void; res: { ok: true; email: string } | { ok: false; error: string } };
+  'drive:disconnect': { req: void; res: { ok: true } | { ok: false; error: string } };
+  'drive:upload': { req: void; res: { ok: true; fileName: string } | { ok: false; error: string } };
+  'drive:list': { req: void; res: { ok: true; files: DriveFile[] } | { ok: false; error: string } };
+  'drive:download': { req: { id: string; name: string }; res: { ok: true; path: string } | { ok: false; error: string } };
   'diagnostics:info': { req: void; res: DiagnosticsInfo };
   'diagnostics:integrityCheck': { req: void; res: { ok: boolean; detail: string } };
   'audit:recent': { req: { limit: number }; res: AuditEntry[] };
@@ -183,12 +211,13 @@ export interface IpcChannels {
   'students:documents': { req: { id: number; docs: { doc_type: string; status: string }[] }; res: { ok: true } | { ok: false; error: string } };
   // ---- Milestone 2: fees ----
   'fees:structure:list': { req: { sessionId: number }; res: FeeStructureRow[] };
-  'fees:structure:save': { req: { sessionId: number; rows: { class_name: string; head_id: number; amount: number; fine_flat?: number; fine_percent?: number; due_day?: number }[] }; res: { ok: true } | { ok: false; error: string } };
+  'fees:structure:save': { req: { sessionId: number; rows: { class_name: string; section?: string; head_id: number; month_label?: string; amount: number; fine_flat?: number; fine_percent?: number; due_day?: number }[] }; res: { ok: true } | { ok: false; error: string } };
   'fees:structure:copy': { req: { fromSessionId: number; toSessionId: number }; res: { ok: true; count: number } | { ok: false; error: string } };
   'fees:dues:generate': { req: { sessionId: number; monthLabel: string }; res: { ok: true; count: number } | { ok: false; error: string } };
-  'fees:dues:list': { req: { studentId: number }; res: DueRow[] };
+  'fees:dues:list': { req: { studentId: number; monthLabels?: string[]; carryForward?: boolean }; res: DueRow[] };
+  'fees:dues:sync': { req: { studentId: number; sessionId: number; monthLabels: string[]; heads: { head_id: number; head_name: string; amount: number }[] }; res: { ok: true } | { ok: false; error: string } };
   'fees:collect': { req: CollectInput; res: { ok: true; receipt_id: number; receipt_no: string; change: number } | { ok: false; error: string } };
-  'fees:receipts:list': { req: { q?: string; from?: string; to?: string; mode?: string; status?: string; limit?: number; offset?: number }; res: { rows: ReceiptRow[]; total: number } };
+  'fees:receipts:list': { req: { q?: string; from?: string; to?: string; mode?: string; status?: string; limit?: number; offset?: number; className?: string; section?: string; admissionNo?: string }; res: { rows: ReceiptRow[]; total: number } };
   'fees:receipts:get': { req: { id: number }; res: ReceiptDetail | null };
   'fees:receipts:cancel': { req: { id: number; reason: string; adminPassword: string }; res: { ok: true } | { ok: false; error: string } };
   'fees:chequeBounce': { req: { id: number; bounceCharge: number }; res: { ok: true } | { ok: false; error: string } };
@@ -208,15 +237,18 @@ export interface IpcChannels {
   // ---- Milestone 2: reports ----
   'reports:list': { req: void; res: ReportDef[] };
   'reports:run': { req: { key: string; params: Record<string, string> }; res: ReportResult };
-  'reports:export': { req: { key: string; params: Record<string, string>; title: string }; res: { ok: true; filePath: string } | { ok: false; error: string } };
-  'export:everything': { req: void; res: { ok: true; filePath: string } | { ok: false; error: string } };
+  'reports:export': { req: { key: string; params: Record<string, string>; title: string }; res: ExportResult };
+  'export:everything': { req: void; res: ExportResult };
   // ---- Milestone 3: exams ----
   'exams:list': { req: { sessionId?: number | null }; res: ExamRow[] };
   'exams:create': { req: { name: string; term: string; sessionId: number | null; classes: string[] }; res: { ok: true; id: number } | { ok: false; error: string } };
   'exams:subjects:list': { req: { examId: number }; res: ExamSubject[] };
+  'exams:subjects:used': { req: { className: string }; res: string[] };
+  'exams:subjects:update': { req: { id: number; subject: string; max_marks: number; pass_marks: number; weightage: number }; res: { ok: true } | { ok: false; error: string } };
+  'exams:subjects:delete': { req: { id: number }; res: { ok: true } | { ok: false; error: string } };
   'exams:subjects:save': { req: { examId: number; subjects: { subject: string; class_name: string; max_marks: number; pass_marks: number; weightage: number }[] }; res: { ok: true } | { ok: false; error: string } };
   'exams:datesheet:list': { req: { examId: number }; res: DatesheetRow[] };
-  'exams:datesheet:save': { req: { examId: number; rows: Omit<DatesheetRow, 'id'>[] }; res: { ok: true; clashes: string[] } | { ok: false; error: string } };
+  'exams:datesheet:save': { req: { examId: number; className: string; rows: Omit<DatesheetRow, 'id'>[] }; res: { ok: true; clashes: string[] } | { ok: false; error: string } };
   'exams:marks:get': { req: { examId: number; subject: string; className: string }; res: Record<number, { marks: number | null; absent: boolean; grace: number }> };
   'exams:marks:save': { req: { examId: number; subject: string; className: string; entries: { student_id: number; marks_obtained: number | null; is_absent: boolean; grace?: number; grace_note?: string }[] }; res: { ok: true; rejected: { student_id: number; reason: string }[] } | { ok: false; error: string } };
   'exams:results': { req: { examId: number; className: string }; res: ResultRow[] };
@@ -248,7 +280,7 @@ export interface IpcChannels {
   'expenses:decide': { req: { id: number; approve: boolean }; res: { ok: true } | { ok: false; error: string } };
   'pettycash:get': { req: { date: string }; res: { date: string; opening: number; closing: number; physical_count: number | null; difference: number | null; notes: string } | null };
   'pettycash:save': { req: { date: string; opening: number; closing: number; physical_count?: number | null; notes?: string }; res: { ok: true } | { ok: false; error: string } };
-  'accounting:tallyExport': { req: { from: string; to: string }; res: { ok: true; xml: string } | { ok: false; error: string } };
+  'accounting:tallyExport': { req: { from: string; to: string }; res: ExportResult };
   // ---- Milestone 4: inventory ----
   'items:list': { req: void; res: ItemRow[] };
   'items:save': { req: Partial<ItemRow> & { id?: number }; res: { ok: true; id: number } | { ok: false; error: string } };
@@ -321,6 +353,7 @@ export type StudentRow = {
   mother_name: string; mother_occupation: string; mother_phone: string;
   guardian_name: string; guardian_phone: string; address: string;
   photo_path: string | null; status: string; session_id: number | null;
+  transport_allocated: number; transport_amount: number;
 }
 
 export interface StudentInput {
@@ -330,16 +363,18 @@ export interface StudentInput {
   father_name?: string; father_occupation?: string; father_phone?: string;
   mother_name?: string; mother_occupation?: string; mother_phone?: string;
   guardian_name?: string; guardian_phone?: string; address?: string; photo_path?: string | null;
+  transport_allocated?: boolean; transport_amount?: number;
 };
 
 export interface StudentFilters {
   q?: string; class_name?: string; section?: string; status?: string;
+  gender?: string; category?: string;
   session_id?: number; limit?: number; offset?: number;
 }
 
 export interface FeeStructureRow {
-  id: number; session_id: number; class_name: string; head_id: number; head_name: string;
-  amount: number; fine_flat: number; fine_percent: number; due_day: number;
+  id: number; session_id: number; class_name: string; section: string; head_id: number; head_name: string;
+  month_label: string; amount: number; fine_flat: number; fine_percent: number; due_day: number;
 }
 
 export interface DueRow {
@@ -358,13 +393,14 @@ export interface CollectInput {
 
 export type ReceiptRow = {
   id: number; receipt_no: string; date: string; student_name: string; admission_no: string;
-  class_name: string; total: number; tendered: number; mode: string; status: string; created_at: string;
+  class_name: string; section: string; total: number; tendered: number; mode: string; status: string; created_at: string;
 }
 
 export interface ReceiptDetail extends ReceiptRow {
-  lines: { head_name: string; amount: number }[];
+  lines: { head_name: string; amount: number; month_label?: string; month_display?: string }[];
   ref_no: string; bank: string; notes: string; cancelled_reason: string;
-  father_name: string; address: string; change_given: number;
+  father_name: string; father_phone: string; mother_phone: string; address: string; change_given: number;
+  fee_months: string[]; remaining_due: number;
 };
 
 export type DefaulterRow = {
@@ -398,6 +434,7 @@ export interface ExamSubject { id: number; subject: string; class_name: string; 
 export interface DatesheetRow { id: number; subject: string; class_name: string; date: string; start_time: string; end_time: string; room: string }
 export interface ResultRow {
   id: number; student_id: number; name: string; admission_no: string; roll_no: string;
+  section: string; father_name: string; photo_path: string | null;
   subjects: { subject: string; marks: number | null; max: number; absent: boolean; grace: number }[];
   total: number; maxTotal: number; percent: number; grade: string; rank: number; pass: boolean;
 }
@@ -413,6 +450,7 @@ export interface StaffDetail {
 export interface SalaryComponent { id?: number; component: string; kind: 'earning' | 'deduction'; amount: number; is_percent: number; percent_of: string }
 export interface PayrollLine {
   id: number; staff_id: number; staff_name: string; employee_code: string;
+  designation: string; department: string;
   payable_days: number; lop_days: number;
   earnings: { component: string; amount: number }[]; deductions: { component: string; amount: number }[];
   arrears: number; bonus: number; gross: number; total_deductions: number; net: number;

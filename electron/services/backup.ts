@@ -12,9 +12,9 @@ import { decryptFile, encryptFile, secureWipe } from './secure-store.js';
  * - Restore: takes a safety snapshot of current data first, then restores.
  */
 
-export interface BackupConfig { enabled: boolean; time: string; keepLast: number; usbPath: string }
+export interface BackupConfig { enabled: boolean; time: string; keepLast: number; usbPath: string; reminderDays: number }
 
-const DEFAULT_CONFIG: BackupConfig = { enabled: true, time: '20:00', keepLast: 30, usbPath: '' };
+const DEFAULT_CONFIG: BackupConfig = { enabled: true, time: '20:00', keepLast: 30, usbPath: '', reminderDays: 7 };
 
 export function getBackupConfig(): BackupConfig {
   try {
@@ -136,7 +136,7 @@ export function restoreBackup(
 }
 
 /** Backup health for the dashboard dot (FR-BKP-02). */
-export function backupHealth(): { lastBackupAt: string | null; overdue: boolean; autoEnabled: boolean; scheduledTime: string } {
+export function backupHealth(): { lastBackupAt: string | null; overdue: boolean; autoEnabled: boolean; scheduledTime: string; daysSinceBackup: number | null; reminderDays: number } {
   const cfg = getBackupConfig();
   let last: string | null = null;
   try {
@@ -144,7 +144,8 @@ export function backupHealth(): { lastBackupAt: string | null; overdue: boolean;
     last = row?.c ?? null;
   } catch { /* ignore */ }
   const overdue = !last || Date.now() - new Date(last).getTime() > 36 * 3600 * 1000;
-  return { lastBackupAt: last, overdue, autoEnabled: cfg.enabled, scheduledTime: cfg.time };
+  const daysSinceBackup = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
+  return { lastBackupAt: last, overdue, autoEnabled: cfg.enabled, scheduledTime: cfg.time, daysSinceBackup, reminderDays: cfg.reminderDays ?? 7 };
 }
 
 /** Scheduler tick: call every minute from main; runs the daily backup when due. */

@@ -20,7 +20,15 @@ import type { LicenseStatus } from '../../shared/types.js';
  *   on expiry the app becomes read-only, never holds data hostage (DEMO-03).
  */
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+// Guarded: import.meta.url is undefined when bundled to CJS (web-demo server).
+const HERE = (() => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+      return path.dirname(fileURLToPath(import.meta.url));
+    }
+  } catch { /* bundled CJS */ }
+  return typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+})();
 const PUBLIC_KEY_PATH = path.join(HERE, 'keys', 'license-public.pem');
 // Build-time override (CI/tests): bake a different public key without editing source.
 export function getPublicKey(): string {

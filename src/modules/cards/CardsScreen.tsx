@@ -9,7 +9,7 @@ import { Dialog } from '../../components/ui/dialog';
 import { DataTable } from '../../components/ui/data-table';
 import { PageHeader, EmptyState, Alert } from '../../components/ui/feedback';
 import { GatepassPrint } from '../../components/print/documents';
-import { IdCardPrint } from '../../components/print/documents';
+import { IdCardsSheetPrint, AdmitCardsSheetPrint } from '../../components/print/documents';
 import { useInstitution } from '../../components/print/Letterhead';
 import { Tabs } from '../../components/ui/primitives';
 import type { MasterItem, CardTemplate, ExamRow, StudentRow } from '@shared/types';
@@ -44,20 +44,24 @@ function IdCardsTab() {
             options={classes.map((c) => ({ value: c.name, label: c.name }))} className="w-36" />
         </div>
         <Button onClick={() => void load()}>{t('modules.cards.loadStudents')}</Button>
-        <Button variant="secondary" onClick={() => window.print()}>{t('modules.cards.printAll')}</Button>
+        <Button variant="secondary" className="no-print" onClick={() => window.print()} disabled={students.length === 0}>{t('modules.cards.printAll')}</Button>
         {templates[0] && <span className="text-xs text-muted">Template: {templates[0].name} v{templates[0].version}</span>}
       </div>
       {students.length === 0 ? <EmptyState title={t('modules.cards.loadHint')} /> : (
         <div className="print-area grid grid-cols-2 gap-4 md:grid-cols-3">
           {students.map((s) => (
-            <div key={s.id} className="break-inside-avoid rounded-xl border-2 border-brand p-4" style={{ aspectRatio: '1.586/1' }}>
+            <div key={s.id} className="break-inside-avoid rounded-xl border-2 border-brand p-4">
               <div className="flex h-full gap-3">
-                <div className="flex h-16 w-14 shrink-0 items-center justify-center rounded bg-surface-2 text-xs text-muted">Photo</div>
+                {s.photo_path
+                  ? <img src={s.photo_path} alt="" className="h-16 w-14 shrink-0 rounded object-cover" />
+                  : <div className="flex h-16 w-14 shrink-0 items-center justify-center rounded bg-surface-2 text-xs text-muted">Photo</div>}
                 <div className="min-w-0 text-xs">
                   <p className="truncate text-sm font-bold">{s.name}</p>
                   <p className="text-muted">Class {s.class_name}-{s.section} · Roll {s.roll_no}</p>
                   <p>Adm: {s.admission_no}</p>
-                  <p>DOB: {s.dob || '—'} · {s.blood_group || ''}</p>
+                  <p>Father: {s.father_name || '—'}</p>
+                  <p>Phone: {s.father_phone || s.mother_phone || '—'}</p>
+                  <p className="truncate">Addr: {s.address || '—'}</p>
                   <p className="mt-1 font-mono text-[10px]">QR:{s.admission_no}</p>
                 </div>
               </div>
@@ -65,21 +69,28 @@ function IdCardsTab() {
           ))}
         </div>
       )}
-      {students.length > 0 && students.map((st) => (
-        <IdCardPrint key={`p-${st.id}`} card={{
-          schoolName: inst?.name, title: 'Student ID Card',
-          name: st.name, admission_no: st.admission_no,
-          class_name: `${st.class_name}${st.section ? `-${st.section}` : ''}`,
-          roll_no: st.roll_no || '', dob: st.dob || '',
-          phone: st.father_phone || '',
-        }} />
-      ))}
+      {students.length > 0 && (
+        <IdCardsSheetPrint
+          schoolName={inst?.name}
+          cards={students.map((st) => ({
+            name: st.name,
+            admission_no: st.admission_no,
+            class_name: `${st.class_name}${st.section ? `-${st.section}` : ''}`,
+            roll_no: st.roll_no || '',
+            father_name: st.father_name || '',
+            parent_phone: st.father_phone || st.mother_phone || '',
+            address: st.address || '',
+            photo: st.photo_path,
+          }))}
+        />
+      )}
     </div>
   );
 }
 
 /** Admit cards tab — bulk with exam schedule extract (FR-EXM-08). */
 function AdmitCardsTab() {
+  const inst = useInstitution();
   const [exams, setExams] = React.useState<ExamRow[]>([]);
   const [examId, setExamId] = React.useState('');
   const [className, setClassName] = React.useState('');
@@ -120,7 +131,7 @@ function AdmitCardsTab() {
             options={(exam?.classes ?? []).map((c) => ({ value: c, label: c }))} className="w-36" />
         </div>
         <Button onClick={() => void load()}>{t('modules.cards.generate')}</Button>
-        <Button variant="secondary" onClick={() => window.print()}>{t('modules.cards.printAll')}</Button>
+        <Button variant="secondary" className="no-print" onClick={() => window.print()} disabled={students.length === 0}>{t('modules.cards.printAll')}</Button>
       </div>
       {students.length === 0 ? <EmptyState title={t('modules.cards.generateHint')} /> : (
         <div className="print-area grid gap-4 md:grid-cols-2">
@@ -129,7 +140,9 @@ function AdmitCardsTab() {
               <h3 className="text-center text-lg font-bold">ADMIT CARD</h3>
               <p className="mb-3 text-center text-sm text-muted">{exam?.name}</p>
               <div className="flex gap-4">
-                <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded bg-surface-2 text-xs text-muted">Photo</div>
+                {s.photo_path
+                  ? <img src={s.photo_path} alt="" className="h-20 w-16 shrink-0 rounded object-cover" />
+                  : <div className="flex h-20 w-16 shrink-0 items-center justify-center rounded bg-surface-2 text-xs text-muted">Photo</div>}
                 <div className="text-sm">
                   <p><strong>{s.name}</strong></p>
                   <p className="text-muted">Adm: {s.admission_no} · Roll: {s.roll_no}</p>
@@ -149,6 +162,20 @@ function AdmitCardsTab() {
             </div>
           ))}
         </div>
+      )}
+      {students.length > 0 && (
+        <AdmitCardsSheetPrint
+          schoolName={inst?.name}
+          examName={exam?.name ?? ''}
+          cards={students.map((s) => ({
+            name: s.name,
+            admission_no: s.admission_no,
+            roll_no: s.roll_no || '',
+            class_name: `${s.class_name}${s.section ? `-${s.section}` : ''}`,
+            photo: s.photo_path,
+            schedule,
+          }))}
+        />
       )}
     </div>
   );
@@ -249,16 +276,18 @@ function GatepassTab() {
               <Button variant="secondary" onClick={() => setOpen(false)}>{t('modules.cards.close')}</Button>
               <Button onClick={() => window.print()}>{t('modules.cards.printPass')}</Button>
             </div>
-            <GatepassPrint pass={{
-              gatepass_no: created.gatepass_no, date: new Date().toISOString().slice(0, 10),
-              student_name: created.student.name,
-              class_name: `${created.student.class_name}${created.student.section ? `-${created.student.section}` : ''}`,
-              reason: form.reason, valid_until: form.valid_until || '',
-              authorized_by: form.authorized_by || '', receiver_name: form.receiver_name || '',
-            }} />
           </>
         )}
       </Dialog>
+      {created && (
+        <GatepassPrint pass={{
+          gatepass_no: created.gatepass_no, date: new Date().toISOString().slice(0, 10),
+          student_name: created.student.name,
+          class_name: `${created.student.class_name}${created.student.section ? `-${created.student.section}` : ''}`,
+          reason: form.reason, valid_until: form.valid_until || '',
+          authorized_by: form.authorized_by || '', receiver_name: form.receiver_name || '',
+        }} />
+      )}
     </div>
   );
 }

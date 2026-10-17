@@ -92,7 +92,7 @@ export function Menu({ trigger, items }: {
       <RMenu.Portal>
         <RMenu.Content
           sideOffset={6}
-          className="z-50 min-w-44 rounded-xl border border-border bg-surface p-1 shadow-[var(--shadow-lg)]"
+          className="z-[70] min-w-44 rounded-xl border border-border bg-surface p-1 shadow-[var(--shadow-lg)]"
         >
           {items.map((item, i) => (
             <RMenu.Item

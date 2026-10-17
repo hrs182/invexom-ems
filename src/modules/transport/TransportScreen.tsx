@@ -6,6 +6,7 @@ import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input, Field, Label } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
+import { downloadExcel } from '../../lib/exportExcel';
 import { Tabs } from '../../components/ui/primitives';
 import { DataTable, type Column } from '../../components/ui/data-table';
 import { Dialog } from '../../components/ui/dialog';
@@ -161,6 +162,16 @@ function AllocationsTab() {
     if (form.routeId) invoke('transport:stops', { routeId: parseInt(form.routeId) }).then(setStops).catch(() => setStops([]));
     else setStops([]);
   }, [form.routeId]);
+  const exportExcel = () => {
+    downloadExcel(`transport-allocations-${session}`, [{
+      name: 'Allocations',
+      rows: rows.map((r) => ({
+        'Student': r.student_name, 'Class': r.class_name ?? '',
+        'Route': r.route_name, 'Stop': r.stop_name ?? '',
+      })),
+    }]);
+  };
+
   const allocate = async () => {
     const sid = parseInt(form.studentId);
     const rid = parseInt(form.routeId);
@@ -183,7 +194,10 @@ function AllocationsTab() {
       </div>
       <div className="mb-3 flex items-end justify-between">
         <div className="w-40"><Label>{T('session')}</Label><Input value={session} onChange={(e) => setSession(e.target.value)} /></div>
-        <Button onClick={() => setOpen(true)}>{T('allocate')}</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={() => setOpen(true)}>{T('allocate')}</Button>
+        </div>
       </div>
       {rows.length === 0 ? <EmptyState title={T('noAllocations')} /> : <DataTable columns={cols} rows={rows} empty={T('noAllocations')} />}
       <Dialog open={open} onOpenChange={setOpen} title={T('allocate')}>

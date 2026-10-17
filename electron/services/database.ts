@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decryptFile, secureWipe, withFileRetry } from './secure-store.js';
+import type { Db } from './db-types.js';
 
 /**
  * SQLite data layer (better-sqlite3, WAL mode).
@@ -12,12 +13,37 @@ import { decryptFile, secureWipe, withFileRetry } from './secure-store.js';
  * - All writes that allocate document numbers run inside transactions (BR-01).
  */
 
-export type Db = Database.Database;
+export type { Db };
+export type { DbRunResult, DbStatement } from './db-types.js';
 
 let db: Db | null = null;
 let dbPath = '';
 
-const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
+/**
+ * Migrations directory. Resolves in order:
+ * 1. EMS_MIGRATIONS_DIR env (deployment override),
+ * 2. alongside this module (source layout / Electron build),
+ * 3. alongside the bundled web-demo server (web-dist/migrations).
+ */
+function migrationsDir(): string {
+  const override = process.env.EMS_MIGRATIONS_DIR;
+  if (override && fs.existsSync(override)) return override;
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.url) {
+      const p = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
+      if (fs.existsSync(p)) return p;
+    }
+  } catch { /* bundled CJS */ }
+  // Bundled web-demo server: migrations next to server.cjs …
+  if (typeof __dirname !== 'undefined') {
+    const p = path.join(__dirname, 'migrations');
+    if (fs.existsSync(p)) return p;
+  }
+  // … or at the deploy-package / cwd root.
+  const cwd = path.join(process.cwd(), 'migrations');
+  if (fs.existsSync(cwd)) return cwd;
+  return path.join(process.cwd(), 'web-dist', 'migrations');
+}
 
 export function openDatabase(workingDbPath: string): Db {
   closeDatabase();
@@ -62,13 +88,14 @@ export function runMigrations(d: Db): { applied: number; fromVersion: number; to
   const applied = new Set<number>(
     (d.prepare('SELECT version FROM schema_migrations').all() as { version: number }[]).map((r) => r.version),
   );
-  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  const migrationsDirPath = migrationsDir();
+  const files = fs.readdirSync(migrationsDirPath).filter((f) => f.endsWith('.sql')).sort();
   let count = 0;
   const fromVersion = applied.size === 0 ? 0 : Math.max(...applied);
   for (const file of files) {
     const version = parseInt(file.split('_')[0], 10);
     if (applied.has(version)) continue;
-    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+    const sql = fs.readFileSync(path.join(migrationsDirPath, file), 'utf8');
     const txn = d.transaction(() => {
       d.exec(sql);
       d.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)').run(version, file);

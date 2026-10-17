@@ -70,7 +70,30 @@
     "title": "Backup & Restore",
     "triggeredBy": "Triggered by",
     "usbHint": "If the path exists when backup runs, a copy is mirrored there.",
-    "usbPath": "Also copy to USB / folder (optional path)"
+    "usbPath": "Also copy to USB / folder (optional path)",
+    "downloadLocal": "Download locally",
+    "downloadDone": "Backup downloaded.",
+    "saveToDrive": "Save to Drive",
+    "driveTitle": "Google Drive backup",
+    "driveDesc": "Upload the encrypted backup to your Google Drive. The file stays encrypted — Google cannot read your data.",
+    "driveNotConnected": "Not connected",
+    "driveConnectedAs": "Connected as",
+    "driveConnect": "Connect Google Drive",
+    "driveConnectWaiting": "Waiting for Google sign-in in your browser…",
+    "driveDisconnect": "Disconnect",
+    "driveUploading": "Uploading to Drive…",
+    "driveUploaded": "Uploaded to Drive.",
+    "driveFilesTitle": "Backups on Google Drive",
+    "driveDownload": "Download",
+    "driveRestoreHint": "Download a Drive backup first, then restore it from the history table below.",
+    "driveClientId": "Google Client ID",
+    "driveClientIdHint": "Create a Desktop-app OAuth client ID in Google Cloud Console (see setup guide), then paste it here.",
+    "driveClientIdSaved": "Client ID saved.",
+    "driveSetupGuide": "How to get a Client ID",
+    "reminderDays": "Remind me if no backup for (days)",
+    "reminderBanner": "You haven't backed up in {n} days. Keep your data safe.",
+    "reminderBannerNever": "You haven't backed up yet. Keep your data safe — take your first backup.",
+    "reminderBackupNow": "Back up now"
   },
   "common": {
     "actions": "Actions",
@@ -102,7 +125,11 @@
     "status": "Status",
     "today": "Today",
     "viewAll": "View all",
-    "yes": "Yes"
+    "yes": "Yes",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "clear": "Clear",
+    "excel": "Excel"
   },
   "dashboard": {
     "activate": "Activate license",
@@ -144,7 +171,9 @@
     "schema": "Schema version",
     "subtitle": "Everything support needs, on one screen.",
     "title": "Diagnostics",
-    "wal": "WAL (crash-safe)"
+    "wal": "WAL (crash-safe)",
+    "supportSection": "Support",
+    "supportHint": "Questions about activation or your license? Reach Invexom at info@invexom.com or +91 9761889748 (invexom.com)."
   },
   "empty": {
     "audit": "No audit entries yet.",
@@ -165,7 +194,7 @@
     "offline": "You appear to be offline."
   },
   "help": {
-    "aboutBody": "Invexom EMS is a one-time-purchase, fully offline school management system by Invexom. No subscriptions, no internet needed, your data stays yours.",
+    "aboutBody": "Invexom EMS is a fully offline school management system by Invexom Technologies, Moradabad (India). It comes with a one-time purchase license — pay once and use it forever. No recurring subscription, no internet needed, and your school data never leaves your computer.",
     "aboutTitle": "About Invexom EMS",
     "checkUpdates": "Check for updates",
     "checking": "Checking…",
@@ -183,12 +212,36 @@
       "about": "About",
       "guide": "Guide",
       "safety": "Data safety",
-      "shortcuts": "Shortcuts"
+      "shortcuts": "Shortcuts",
+      "license": "License",
+      "support": "Support"
     },
     "title": "Help",
     "upToDate": "You have the latest version.",
     "updateAvailable": "Version {v} is available.",
-    "updateError": "Could not check for updates (are you online?)."
+    "updateError": "Could not check for updates (are you online?).",
+    "companyLabel": "Developed by",
+    "companyName": "Invexom",
+    "companyAddr": "Moradabad, Uttar Pradesh, India",
+    "companyWeb": "invexom.com",
+    "companyEmail": "info@invexom.com",
+    "companyPhone": "+91 9761889748",
+    "licenseTitle": "One-time license, lifetime use",
+    "licenseBody": "Invexom EMS is sold as a one-time purchase. There is no monthly or yearly subscription — you pay once and the software is yours to use forever on the licensed computer.",
+    "licensePoints": [
+      "Pay once, use forever — no recurring subscription or renewal fees.",
+      "The license is locked to one computer. If you move to a new computer, contact Invexom for a free re-issue.",
+      "Free demo included: up to 50 students and 30 days, with a watermark on printed documents.",
+      "Activating a license keeps all your demo data — nothing is ever lost.",
+      "Your license file (.inelic) is issued for your school — keep it safe and private."
+    ],
+    "supportTitle": "We're here to help",
+    "supportBody": "For activation help, a license re-issue, or any question about Invexom EMS, contact us:",
+    "supportWebsite": "Website",
+    "supportEmailL": "Email",
+    "supportPhoneL": "Phone",
+    "supportAddrL": "Office",
+    "supportTip": "Tip: when reporting a problem, open the Diagnostics page and use “Copy info” — pasting those details with your message helps us solve it much faster."
   },
   "license": {
     "activateDone": "License activated. Thank you!",
@@ -292,7 +345,14 @@
     },
     "title": "Settings",
     "website": "Website",
-    "libraryFinePerDay": "Library fine per day (₹)"
+    "libraryFinePerDay": "Library fine per day (₹)",
+    "newClassPh": "e.g. VI",
+    "addClass": "Add class",
+    "addSection": "Add section",
+    "newSectionPh": "e.g. A",
+    "noSections": "No sections yet.",
+    "sectionsCount": "{n} sections",
+    "classesHelp": "Tip: expand a class to manage its sections. Use ↑ ↓ to arrange the order — it applies everywhere (forms, lists, reports)."
   },
   "setup": {
     "addClass": "Add class",
@@ -410,6 +470,11 @@
       "fldRoll": "Roll no.",
       "fldDob": "Date of birth",
       "fldGender": "Gender",
+      "genderMale": "Male",
+      "genderFemale": "Female",
+      "genderOther": "Other",
+      "errNameRequired": "Student name is required.",
+      "errClassRequired": "Please select a class.",
       "fldBlood": "Blood group",
       "fldCategory": "Category",
       "fldReligion": "Religion",
@@ -423,7 +488,16 @@
       "fldGuardian": "Guardian name",
       "fldGuardianPhone": "Guardian phone",
       "fldAddress": "Address",
-      "fldSibling": "Sibling info"
+      "fldSibling": "Sibling info",
+      "statusActive": "Active",
+      "statusInactive": "Inactive",
+      "filterCount": "{n} students",
+      "photo": "Photo",
+      "photoHint": "Passport-size photo — JPG or PNG only, max 2MB (auto-resized)",
+      "photoChange": "Change photo",
+      "photoRemove": "Remove",
+      "photoTypeError": "Only JPG or PNG photos are allowed.",
+      "photoSizeError": "Photo must be smaller than 2MB."
     },
     "fees": {
       "collect": "Collect fee",
@@ -487,7 +561,21 @@
       "feeHead": "Fee head",
       "fineFlat": "Fine flat ₹",
       "finePct": "Fine %/mo",
-      "dueDay": "Due day"
+      "dueDay": "Due day",
+      "singleMonth": "Single month",
+      "monthRange": "Month range",
+      "fromMonth": "From",
+      "toMonth": "To",
+      "loadDues": "Load dues",
+      "showingMonths": "Showing: {n}",
+      "admNo": "Adm. no.",
+      "section": "Section",
+      "print": "Print",
+      "refEg": "UPI ref / cheque no.",
+      "notesPh": "Optional note",
+      "remainingDue": "Remaining due (partial payment)",
+      "changeReturn": "Change to return",
+      "exactAmount": "Exact amount"
     },
     "attendance": {
       "students": "Students",
@@ -522,7 +610,8 @@
       "compute": "Compute",
       "present": "Present",
       "total": "Total",
-      "belowThreshold": "below threshold"
+      "belowThreshold": "below threshold",
+      "legend": "P = Present, A = Absent, L = Leave, H = Holiday. Click a letter per student, or use \"All present\" then flip the exceptions."
     },
     "reports": {
       "report": "Report",
@@ -540,7 +629,7 @@
       "newExam": "+ New exam",
       "examName": "Exam name",
       "term": "Term",
-      "classes": "Classes (comma separated)",
+      "classes": "Classes",
       "create": "Create",
       "cancel": "Cancel",
       "lock": "Lock marks",

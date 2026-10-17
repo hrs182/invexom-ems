@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/card';
 import { Input, Label, Textarea } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
+import { downloadExcel } from '../../lib/exportExcel';
 import { Dialog } from '../../components/ui/dialog';
 import { DataTable, type Column } from '../../components/ui/data-table';
 import { PageHeader, EmptyState, Alert, StatCard } from '../../components/ui/feedback';
@@ -29,6 +30,18 @@ function EnquiriesTab() {
   const [convClass, setConvClass] = React.useState('');
   const [convSection, setConvSection] = React.useState('');
   const [msg, setMsg] = React.useState('');
+
+  const exportExcel = () => {
+    downloadExcel(`enquiries-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Enquiries',
+      rows: rows.map((r) => ({
+        'Name': r.name, 'Phone': r.phone,
+        'Class Interested': r.class_interested, 'Source': r.source,
+        'Follow-up': r.followup_date, 'Counsellor': r.counsellor,
+        'Status': r.status,
+      })),
+    }]);
+  };
 
   const load = React.useCallback(async () => {
     const f = filter === 'today' ? { today: true } : filter === 'overdue' ? { overdue: true } : { status: filter === 'all' ? undefined : filter };
@@ -105,7 +118,10 @@ function EnquiriesTab() {
               { value: 'lost', label: 'Lost' }, { value: 'all', label: 'All' },
             ]} className="w-40" />
         </div>
-        <Button className="ml-auto" onClick={() => setOpen(true)}>+ New enquiry</Button>
+        <div className="ml-auto flex items-end gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={() => setOpen(true)}>+ New enquiry</Button>
+        </div>
       </div>
       <DataTable columns={columns} rows={rows} empty={<EmptyState title={t('modules.frontoffice.noEnquiries')} />} />
 
@@ -174,6 +190,16 @@ function VisitorsTab() {
     void load();
   };
 
+  const exportVisitorsExcel = () => {
+    downloadExcel(`visitors-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Visitors',
+      rows: rows.map((r) => ({
+        'Name': r.name, 'Phone': r.phone, 'Purpose': r.purpose,
+        'To Meet': r.whom_to_meet, 'In Time': r.in_time, 'Out Time': r.out_time ?? '',
+      })),
+    }]);
+  };
+
   return (
     <div>
       <Card className="mb-4 p-4">
@@ -184,6 +210,7 @@ function VisitorsTab() {
           <div><Label>Purpose</Label><Input value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} /></div>
           <div><Label>Whom to meet</Label><Input value={form.whom_to_meet} onChange={(e) => setForm({ ...form, whom_to_meet: e.target.value })} /></div>
           <div className="flex items-end"><Button onClick={() => void save()}>Check in</Button></div>
+          <div className="flex items-end"><Button variant="secondary" className="no-print" onClick={exportVisitorsExcel} disabled={rows.length === 0}>{t('common.excel')}</Button></div>
         </div>
       </Card>
       <DataTable

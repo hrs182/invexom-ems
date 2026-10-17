@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { invoke } from '../../lib/ipc';
+import { invoke, downloadExportResult } from '../../lib/ipc';
 import { t } from '../../i18n/index';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -8,6 +8,7 @@ import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
 import { Dialog } from '../../components/ui/dialog';
 import { DataTable, type Column } from '../../components/ui/data-table';
+import { downloadExcel } from '../../lib/exportExcel';
 import { PageHeader, EmptyState, Alert, StatCard } from '../../components/ui/feedback';
 import { Tabs } from '../../components/ui/primitives';
 import type { VoucherRow, MasterItem } from '@shared/types';
@@ -41,6 +42,17 @@ function VouchersTab() {
     void load();
   };
 
+  const exportExcel = () => {
+    downloadExcel(`vouchers-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Vouchers',
+      rows: rows.map((r) => ({
+        'Voucher No': r.voucher_no, 'Date': r.date, 'Type': r.type,
+        'Ledger': r.ledger_name, 'Amount': r.amount,
+        'Mode': r.mode, 'Narration': r.narration,
+      })),
+    }]);
+  };
+
   const columns: Column<VoucherRow>[] = [
     { key: 'voucher_no', header: 'Voucher no.', render: (r) => <span className="font-medium">{r.voucher_no}</span> },
     { key: 'date', header: t('modules.accounting.date') },
@@ -59,7 +71,10 @@ function VouchersTab() {
           <Select value={filterType} onValueChange={setFilterType} placeholder="All types"
             options={[{ value: '', label: t('modules.accounting.allTypes') }, { value: 'receipt', label: 'Receipt' }, { value: 'payment', label: 'Payment' }, { value: 'journal', label: 'Journal' }, { value: 'contra', label: 'Contra' }]} className="w-40" />
         </div>
-        <Button className="ml-auto" onClick={() => setOpen(true)}>+ New voucher</Button>
+        <div className="ml-auto flex items-end gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={() => setOpen(true)}>+ New voucher</Button>
+        </div>
       </div>
       <DataTable columns={columns} rows={rows} empty={<EmptyState title={t('modules.accounting.noVouchers')} />} />
       <Dialog open={open} onOpenChange={setOpen} title={t('modules.accounting.voucherTitle')}>
@@ -108,7 +123,7 @@ function ReportsTab() {
   const tally = async () => {
     setMsg('');
     const r = await invoke('accounting:tallyExport', { from, to });
-    setMsg(r.ok ? `Tally XML saved.` : r.error === 'cancelled' ? '' : r.error);
+    setMsg(r.ok && !('dataBase64' in r) ? 'Tally XML saved.' : downloadExportResult(r));
   };
 
   return (

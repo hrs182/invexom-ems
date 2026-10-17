@@ -58,6 +58,15 @@ export function Dashboard({ onNavigate }: { onNavigate: (k: string) => void }) {
           <Button size="sm" className="ml-3" onClick={() => onNavigate('licensing')}>{t('dashboard.activate')}</Button>
         </Alert>
       )}
+
+      {health && (health.daysSinceBackup === null || health.daysSinceBackup >= health.reminderDays) && (
+        <Alert tone="warning" className="mb-4">
+          {health.daysSinceBackup === null
+            ? t('backup.reminderBannerNever')
+            : t('backup.reminderBanner', { n: health.daysSinceBackup })}
+          <Button size="sm" className="ml-3" onClick={() => onNavigate('backup')}>{t('backup.reminderBackupNow')}</Button>
+        </Alert>
+      )}
       {license?.mode === 'demo-expired' && (
         <Alert tone="danger" className="mb-4">
           {t('dashboard.demoExpired')}

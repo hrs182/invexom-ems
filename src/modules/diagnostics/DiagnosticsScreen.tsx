@@ -43,7 +43,9 @@ export function DiagnosticsScreen() {
 
   const rows: [string, React.ReactNode][] = [
     [t('diagnostics.appVersion'), info.version],
-    [t('diagnostics.electron'), `${info.electronVersion} · Node ${info.nodeVersion} · Chrome ${info.chromeVersion}`],
+    [t('diagnostics.electron'), info.electronVersion && info.electronVersion !== 'undefined'
+      ? `${info.electronVersion} · Node ${info.nodeVersion} · Chrome ${info.chromeVersion}`
+      : `Browser · Chrome ${info.chromeVersion}`],
     [t('diagnostics.platform'), info.platform],
     [t('diagnostics.dataFolder'), <code key="d" className="break-all font-mono text-[13px]">{info.dataDir}</code>],
     [t('diagnostics.dbFile'), <code key="f" className="break-all font-mono text-[13px]">{info.dbPath}</code>],
@@ -96,6 +98,16 @@ export function DiagnosticsScreen() {
             <div className="flex justify-between"><span className="text-muted">{t('backup.healthTitle')}</span>
               {info.backup.overdue ? <Badge tone="danger">{t('backup.overdue')}</Badge> : <Badge tone="success">{t('backup.healthy')}</Badge>}
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>{t('diagnostics.supportSection')}</CardTitle></CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <div className="flex justify-between border-b border-border pb-2"><span className="text-muted">{t('help.companyLabel')}</span><strong>{t('help.companyName')}</strong></div>
+            <div className="flex justify-between border-b border-border pb-2"><span className="text-muted">{t('help.supportEmailL')}</span><strong>{t('help.companyEmail')}</strong></div>
+            <div className="flex justify-between border-b border-border pb-2"><span className="text-muted">{t('help.supportPhoneL')}</span><strong>{t('help.companyPhone')}</strong></div>
+            <div className="flex justify-between"><span className="text-muted">{t('help.supportWebsite')}</span><strong>{t('help.companyWeb')}</strong></div>
+            <p className="mt-1 text-[13px] text-muted">{t('diagnostics.supportHint')}</p>
           </CardContent>
         </Card>
       </div>

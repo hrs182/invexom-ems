@@ -29,7 +29,7 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
     version: '1.0.0', electronVersion: '44.5.1', platform: 'win32', demoBuild: false,
     needsSetup, dataDir: 'C:\\Users\\Demo\\AppData\\Roaming\\Invexom EMS',
     license: demoLicense,
-    backupHealth: { lastBackupAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00' },
+    backupHealth: { lastBackupAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00', daysSinceBackup: 0, reminderDays: 7 },
   }),
   'app:checkForUpdates': async () => ({ available: false }),
   'setup:needed': async () => needsSetup,
@@ -55,9 +55,10 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   }),
   'settings:institution:set': async () => ({ ok: true as const }),
   'settings:sessions:list': async () => [
-    { id: 1, name: '2026–27', startDate: '2026-04-01', endDate: '2027-03-31', isActive: true, isLocked: false },
+    { id: 1, name: '2026–27', startDate: '2026-04-01', endDate: '2027-03-31', isActive: true, isLocked: false, feeStartMonth: '2026-04' },
   ],
   'settings:sessions:create': async () => ({ ok: true as const, id: 2 }),
+  'settings:sessions:update': async () => ({ ok: true as const }),
   'masters:list': async ({ kind }) => {
     const seed: Record<string, string[]> = {
       class: ['Nursery', 'LKG', 'UKG', 'I', 'II', 'III', 'IV', 'V'],
@@ -74,6 +75,8 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'masters:add': async () => ({ ok: true as const, id: 99 }),
   'masters:rename': async () => ({ ok: true as const }),
   'masters:remove': async () => ({ ok: true as const }),
+  'masters:reorder': async () => ({ ok: true as const }),
+  'masters:subjects:set-class': async () => ({ ok: true as const, moved: 0 }),
   'numbering:list': async () => [
     { key: 'receipt', label: 'Fee receipt', pattern: 'R-{YYYY}-{SEQ:5}', last_seq: 128, example: 'R-2026-00129' },
     { key: 'voucher', label: 'Accounting voucher', pattern: 'V-{YYYY}-{SEQ:5}', last_seq: 42, example: 'V-2026-00043' },
@@ -100,15 +103,24 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
     { id: 1, fileName: 'invexom-ems-backup-20261004-200000.db.enc', path: 'C:\\backups\\…', sizeBytes: 245760, createdAt: new Date(Date.now() - 86400000).toISOString(), triggeredBy: 'auto', status: 'ok' },
   ],
   'backup:restore': async () => ({ ok: true as const }),
-  'backup:config:get': async () => ({ enabled: true, time: '20:00', keepLast: 30, usbPath: '' }),
+  'backup:config:get': async () => ({ enabled: true, time: '20:00', keepLast: 30, usbPath: '', reminderDays: 7 }),
   'backup:config:set': async () => ({ ok: true as const }),
-  'backup:health': async () => ({ lastBackupAt: new Date().toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00' }),
+  'backup:health': async () => ({ lastBackupAt: new Date().toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00', daysSinceBackup: 0, reminderDays: 7 }),
+  'backup:download': async () => ({ ok: true as const, filePath: 'C:\\backups\\backup.db.enc' }),
+  'drive:status': async () => ({ connected: false, clientIdSet: false }),
+  'drive:clientId:get': async () => ({ clientId: '' }),
+  'drive:clientId:set': async () => ({ ok: true as const }),
+  'drive:connect': async () => ({ ok: true as const, email: 'demo@gmail.com' }),
+  'drive:disconnect': async () => ({ ok: true as const }),
+  'drive:upload': async () => ({ ok: true as const, fileName: 'Invexom-EMS-Backup-2026-10-11.db.enc' }),
+  'drive:list': async () => ({ ok: true as const, files: [] }),
+  'drive:download': async () => ({ ok: true as const, path: 'C:\\backups\\drive.db.enc' }),
   'diagnostics:info': async () => ({
     version: '1.0.0', electronVersion: '44.5.1', nodeVersion: '22.x', chromeVersion: '14x',
     platform: 'win32 x64', arch: 'x64', dataDir: 'C:\\Users\\Demo\\…\\Invexom EMS',
     dbPath: '…\\invexom-ems.db.enc', dbSizeBytes: 245760, walMode: true, integrity: 'not-run' as const,
     license: demoLicense,
-    backup: { lastBackupAt: new Date().toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00' },
+    backup: { lastBackupAt: new Date().toISOString(), overdue: false, autoEnabled: true, scheduledTime: '20:00', daysSinceBackup: 0, reminderDays: 7 },
     schemaVersion: 1,
   }),
   'diagnostics:integrityCheck': async () => ({ ok: true, detail: 'ok' }),
@@ -120,14 +132,14 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   // ---- Milestone 2 mocks ----
   'students:list': async () => ({
     rows: [
-      { id: 1, admission_no: 'INV/2026/0001', name: 'Aarav Sharma', dob: '2018-05-12', gender: 'Male', blood_group: 'B+', category: 'Gen', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '3', admission_date: '2026-04-02', previous_school: '', sibling_info: '', father_name: 'Rohit Sharma', father_occupation: 'Engineer', father_phone: '9876500001', mother_name: 'Priya Sharma', mother_occupation: 'Teacher', mother_phone: '9876500002', guardian_name: '', guardian_phone: '', address: '12 MG Road', photo_path: null, status: 'active', session_id: 1 },
-      { id: 2, admission_no: 'INV/2026/0002', name: 'Diya Patel', dob: '2018-08-21', gender: 'Female', blood_group: 'O+', category: 'OBC', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '7', admission_date: '2026-04-03', previous_school: '', sibling_info: '', father_name: 'Amit Patel', father_occupation: 'Doctor', father_phone: '9876500003', mother_name: 'Neha Patel', mother_occupation: '', mother_phone: '', guardian_name: '', guardian_phone: '', address: '45 Park Street', photo_path: null, status: 'active', session_id: 1 },
+      { id: 1, admission_no: 'INV/2026/0001', name: 'Aarav Sharma', dob: '2018-05-12', gender: 'Male', blood_group: 'B+', category: 'Gen', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '3', admission_date: '2026-04-02', previous_school: '', sibling_info: '', father_name: 'Rohit Sharma', father_occupation: 'Engineer', father_phone: '9876500001', mother_name: 'Priya Sharma', mother_occupation: 'Teacher', mother_phone: '9876500002', guardian_name: '', guardian_phone: '', address: '12 MG Road', photo_path: null, status: 'active', session_id: 1, transport_allocated: 0, transport_amount: 0 },
+      { id: 2, admission_no: 'INV/2026/0002', name: 'Diya Patel', dob: '2018-08-21', gender: 'Female', blood_group: 'O+', category: 'OBC', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '7', admission_date: '2026-04-03', previous_school: '', sibling_info: '', father_name: 'Amit Patel', father_occupation: 'Doctor', father_phone: '9876500003', mother_name: 'Neha Patel', mother_occupation: '', mother_phone: '', guardian_name: '', guardian_phone: '', address: '45 Park Street', photo_path: null, status: 'active', session_id: 1, transport_allocated: 0, transport_amount: 0 },
     ], total: 2,
   }),
   'students:get': async ({ id }: { id: number }) => {
     const rows = [
-      { id: 1, admission_no: 'INV/2026/0001', name: 'Aarav Sharma', dob: '2018-05-12', gender: 'Male', blood_group: 'B+', category: 'Gen', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '3', admission_date: '2026-04-02', previous_school: '', sibling_info: '', father_name: 'Rohit Sharma', father_occupation: 'Engineer', father_phone: '9876500001', mother_name: 'Priya Sharma', mother_occupation: 'Teacher', mother_phone: '9876500002', guardian_name: '', guardian_phone: '', address: '12 MG Road', photo_path: null, status: 'active', session_id: 1 },
-      { id: 2, admission_no: 'INV/2026/0002', name: 'Diya Patel', dob: '2018-08-21', gender: 'Female', blood_group: 'O+', category: 'OBC', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '7', admission_date: '2026-04-03', previous_school: '', sibling_info: '', father_name: 'Amit Patel', father_occupation: 'Doctor', father_phone: '9876500003', mother_name: 'Neha Patel', mother_occupation: '', mother_phone: '', guardian_name: '', guardian_phone: '', address: '45 Park Street', photo_path: null, status: 'active', session_id: 1 },
+      { id: 1, admission_no: 'INV/2026/0001', name: 'Aarav Sharma', dob: '2018-05-12', gender: 'Male', blood_group: 'B+', category: 'Gen', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '3', admission_date: '2026-04-02', previous_school: '', sibling_info: '', father_name: 'Rohit Sharma', father_occupation: 'Engineer', father_phone: '9876500001', mother_name: 'Priya Sharma', mother_occupation: 'Teacher', mother_phone: '9876500002', guardian_name: '', guardian_phone: '', address: '12 MG Road', photo_path: null, status: 'active', session_id: 1, transport_allocated: 0, transport_amount: 0 },
+      { id: 2, admission_no: 'INV/2026/0002', name: 'Diya Patel', dob: '2018-08-21', gender: 'Female', blood_group: 'O+', category: 'OBC', religion: 'Hindu', nationality: 'Indian', class_name: 'V', section: 'A', roll_no: '7', admission_date: '2026-04-03', previous_school: '', sibling_info: '', father_name: 'Amit Patel', father_occupation: 'Doctor', father_phone: '9876500003', mother_name: 'Neha Patel', mother_occupation: '', mother_phone: '', guardian_name: '', guardian_phone: '', address: '45 Park Street', photo_path: null, status: 'active', session_id: 1, transport_allocated: 0, transport_amount: 0 },
     ];
     const r = rows.find((r) => r.id === id) ?? null;
     return r ? { ...r, documents: [] } : null;
@@ -140,8 +152,8 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'students:issueTC': async () => ({ ok: true as const, tcNo: 'TC-2026-0001' }),
   'students:documents': async () => ({ ok: true as const }),
   'fees:structure:list': async () => [
-    { id: 1, session_id: 1, class_name: 'V', head_id: 1, head_name: 'Tuition Fee', amount: 1500, fine_flat: 50, fine_percent: 0, due_day: 10 },
-    { id: 2, session_id: 1, class_name: 'V', head_id: 3, head_name: 'Exam Fee', amount: 500, fine_flat: 0, fine_percent: 0, due_day: 10 },
+    { id: 1, session_id: 1, class_name: 'V', section: '', head_id: 1, head_name: 'Tuition Fee', month_label: '', amount: 1500, fine_flat: 50, fine_percent: 0, due_day: 10 },
+    { id: 2, session_id: 1, class_name: 'V', section: '', head_id: 3, head_name: 'Exam Fee', month_label: '', amount: 500, fine_flat: 0, fine_percent: 0, due_day: 10 },
   ],
   'fees:structure:save': async () => ({ ok: true as const }),
   'fees:structure:copy': async () => ({ ok: true as const, count: 4 }),
@@ -151,21 +163,23 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
     { id: 2, student_id: 1, student_name: 'Aarav Sharma', admission_no: 'INV/2026/0001', class_name: 'V', section: 'A', head_id: 3, head_name: 'Exam Fee', amount: 500, discount: 0, fine: 0, paid: 0, due_date: '2026-10-10', month_label: '2026-10', status: 'due', payable: 500 },
   ],
   'fees:collect': async () => ({ ok: true as const, receipt_id: 1, receipt_no: 'R-2026-00129', change: 0 }),
+  'fees:dues:sync': async () => ({ ok: true as const }),
   'fees:receipts:list': async () => ({
     rows: [
-      { id: 1, receipt_no: 'R-2026-00129', date: '2026-10-01', student_name: 'Aarav Sharma', admission_no: 'INV/2026/0001', class_name: 'V', total: 2050, tendered: 2050, mode: 'cash', status: 'active', created_at: '2026-10-01T10:00:00' },
+      { id: 1, receipt_no: 'R-2026-00129', date: '2026-10-01', student_name: 'Aarav Sharma', admission_no: 'INV/2026/0001', class_name: 'V', section: 'A', total: 2050, tendered: 2050, mode: 'cash', status: 'active', created_at: '2026-10-01T10:00:00' },
     ], total: 1,
   }),
   'fees:receipts:get': async ({ id }: { id: number }) => ({
     id, receipt_no: 'R-2026-00129', date: '2026-10-04', student_name: 'Aarav Sharma',
-    admission_no: 'INV/2026/0001', class_name: 'V', total: 4500, tendered: 4500,
+    admission_no: 'INV/2026/0001', class_name: 'V', section: 'A', father_phone: '9810000000', mother_phone: '', total: 4500, tendered: 4500,
     mode: 'cash', status: 'active', created_at: '2026-10-04',
     ref_no: '', bank: '', notes: '', cancelled_reason: '', father_name: 'Rohit Sharma',
     address: '12 MG Road', change_given: 0,
     lines: [
-      { head_name: 'Tuition Fee — October', amount: 4000 },
-      { head_name: 'Transport Fee — October', amount: 500 },
+      { head_name: 'Tuition Fee — October', amount: 4000, month_label: '2026-10', month_display: 'Oct 2026' },
+      { head_name: 'Transport Fee — October', amount: 500, month_label: '2026-10', month_display: 'Oct 2026' },
     ],
+    fee_months: ['2026-10'], remaining_due: 0,
   }),
   'fees:receipts:cancel': async () => ({ ok: true as const }),
   'fees:chequeBounce': async () => ({ ok: true as const }),
@@ -208,7 +222,7 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'export:everything': async () => ({ ok: true as const, filePath: 'C:\\Users\\Demo\\Documents\\invexom-ems-full-export.xlsx' }),
   // ---- Milestone 3 mocks ----
   'exams:list': async () => [
-    { id: 1, name: 'Half-Yearly Exam', term: 'Term 1', session_id: 1, classes: ['V'], is_locked: 0 },
+    { id: 1, name: 'Half-Yearly Exam', term: 'Term 1', session_id: 1, transport_allocated: 0, transport_amount: 0, classes: ['V'], is_locked: 0 },
   ],
   'exams:create': async () => ({ ok: true as const, id: 2 }),
   'exams:subjects:list': async () => [
@@ -223,9 +237,12 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'exams:marks:get': async () => ({ 1: { marks: 78, absent: false, grace: 0 } }),
   'exams:marks:save': async () => ({ ok: true as const, rejected: [] }),
   'exams:results': async () => [
-    { id: 1, student_id: 1, name: 'Aarav Sharma', admission_no: 'INV/2026/0001', roll_no: '3',
+    { id: 1, student_id: 1, name: 'Aarav Sharma', admission_no: 'INV/2026/0001', roll_no: '3', section: 'A', father_name: 'Rohit Sharma', photo_path: null,
       subjects: [{ subject: 'Mathematics', marks: 78, max: 100, absent: false, grace: 0 }], total: 78, maxTotal: 100, percent: 78, grade: 'B1', rank: 1, pass: true },
   ],
+  'exams:subjects:update': async () => ({ ok: true as const }),
+  'exams:subjects:delete': async () => ({ ok: true as const }),
+  'exams:subjects:used': async () => ['English', 'Hindi', 'Mathematics'],
   'exams:lock': async () => ({ ok: true as const }),
   'exams:unlock': async () => ({ ok: true as const }),
   'exams:analysis': async () => ({
@@ -269,7 +286,7 @@ const handlers: { [K in keyof IpcChannels]: (req: IpcChannels[K]['req']) => Prom
   'expenses:decide': async () => ({ ok: true as const }),
   'pettycash:get': async () => null,
   'pettycash:save': async () => ({ ok: true as const }),
-  'accounting:tallyExport': async () => ({ ok: true as const, xml: 'C:\\tally-export.xml' }),
+  'accounting:tallyExport': async () => ({ ok: true as const, filePath: 'C:\\tally-export.xml' }),
   'items:list': async () => [
     { id: 1, name: 'A4 Paper Rim', category: 'Stationery', unit: 'rim', purchase_rate: 240, reorder_level: 10, barcode: '', current_stock: 8 },
   ],

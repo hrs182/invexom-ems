@@ -35,38 +35,108 @@ export function listExamSubjects(examId: number): ExamSubject[] {
   return getDb().prepare('SELECT * FROM exam_subjects WHERE exam_id = ? ORDER BY class_name, subject').all(examId) as ExamSubject[];
 }
 
+/** Distinct subject names ever used in any exam of the class — for name suggestions. */
+export function listUsedSubjects(className: string): string[] {
+  return (
+    getDb().prepare('SELECT DISTINCT subject FROM exam_subjects WHERE class_name = ? ORDER BY subject').all(className) as {
+      subject: string;
+    }[]
+  ).map((r) => r.subject);
+}
+
+/**
+ * Edits one exam subject. A rename propagates to entered marks and datesheet
+ * rows so nothing is orphaned; numeric changes keep existing marks intact.
+ */
+export function updateExamSubject(
+  id: number,
+  patch: { subject: string; max_marks: number; pass_marks: number; weightage: number },
+  user: SafeUser,
+): void {
+  const db = getDb();
+  const old = db.prepare('SELECT exam_id, subject, class_name FROM exam_subjects WHERE id = ?').get(id) as
+    { exam_id: number; subject: string; class_name: string } | undefined;
+  if (!old) throw new Error('not-found');
+  assertUnlocked(old.exam_id);
+  const name = patch.subject.trim();
+  if (!name) throw new Error('name-required');
+  const dup = db.prepare(`SELECT id FROM exam_subjects WHERE exam_id = ? AND class_name = ? AND LOWER(subject) = LOWER(?) AND id != ?`)
+    .get(old.exam_id, old.class_name, name, id);
+  if (dup) throw new Error('name-exists');
+  const txn = db.transaction(() => {
+    db.prepare('UPDATE exam_subjects SET subject = ?, max_marks = ?, pass_marks = ?, weightage = ? WHERE id = ?')
+      .run(name, patch.max_marks, patch.pass_marks, patch.weightage, id);
+    if (name !== old.subject) {
+      db.prepare('UPDATE marks SET subject = ? WHERE exam_id = ? AND subject = ?').run(name, old.exam_id, old.subject);
+      db.prepare('UPDATE datesheet SET subject = ? WHERE exam_id = ? AND class_name = ? AND subject = ?')
+        .run(name, old.exam_id, old.class_name, old.subject);
+    }
+  });
+  txn();
+  audit(user, 'exams.subjects.update', 'exam', old.exam_id, null, { id, subject: name });
+}
+
+/**
+ * Deletes one exam subject together with its entered marks and datesheet rows
+ * (all three store the subject name as plain text).
+ */
+export function deleteExamSubject(id: number, user: SafeUser): void {
+  const db = getDb();
+  const old = db.prepare('SELECT exam_id, subject, class_name FROM exam_subjects WHERE id = ?').get(id) as
+    { exam_id: number; subject: string; class_name: string } | undefined;
+  if (!old) throw new Error('not-found');
+  assertUnlocked(old.exam_id);
+  const txn = db.transaction(() => {
+    db.prepare('DELETE FROM marks WHERE exam_id = ? AND subject = ?').run(old.exam_id, old.subject);
+    db.prepare('DELETE FROM datesheet WHERE exam_id = ? AND class_name = ? AND subject = ?')
+      .run(old.exam_id, old.class_name, old.subject);
+    db.prepare('DELETE FROM exam_subjects WHERE id = ?').run(id);
+  });
+  txn();
+  audit(user, 'exams.subjects.delete', 'exam', old.exam_id, null, { id, subject: old.subject });
+}
+
 function assertUnlocked(examId: number): void {
   const row = getDb().prepare('SELECT is_locked FROM exams WHERE id = ?').get(examId) as { is_locked: number } | undefined;
   if (row?.is_locked) throw new Error('exam-locked');
 }
 
 /** FR-EXM-02: datesheet with clash detection. Returns clashes found (blocks save when clashes). */
-export function saveDatesheet(examId: number, rows: Omit<DatesheetRow, 'id'>[], user: SafeUser): { clashes: string[] } {
+/**
+ * Saves the datesheet for ONE class of an exam. Other classes' rows are left
+ * untouched (class-first workflow). Room double-booking is still checked
+ * against the other classes' existing rows.
+ */
+export function saveDatesheet(examId: number, className: string, rows: Omit<DatesheetRow, 'id'>[], user: SafeUser): { clashes: string[] } {
   const db = getDb();
   assertUnlocked(examId);
   const clashes: string[] = [];
-  // Clash: same class two exams same date+slot; same room double-booked same date+slot.
   const seen = new Map<string, string>();
-  for (const r of rows) {
-    const slot = `${r.date}|${r.start_time}`;
-    const ck = `class:${r.class_name}|${slot}`;
-    if (seen.has(ck)) clashes.push(`${r.class_name} has two exams on ${r.date} at ${r.start_time} (${seen.get(ck)} vs ${r.subject})`);
-    else seen.set(ck, r.subject);
-    if (r.room) {
-      const rk = `room:${r.room}|${slot}`;
-      if (seen.has(rk)) clashes.push(`Room ${r.room} double-booked on ${r.date} at ${r.start_time}`);
-      else seen.set(rk, r.subject);
+  const check = (cls: string, subject: string, date: string, start: string, room: string) => {
+    const slot = `${date}|${start}`;
+    const ck = `class:${cls}|${slot}`;
+    if (seen.has(ck)) clashes.push(`${cls} has two exams on ${date} at ${start} (${seen.get(ck)} vs ${subject})`);
+    else seen.set(ck, subject);
+    if (room) {
+      const rk = `room:${room}|${slot}`;
+      if (seen.has(rk)) clashes.push(`Room ${room} double-booked on ${date} at ${start} (${seen.get(rk)} vs ${cls} ${subject})`);
+      else seen.set(rk, `${cls} ${subject}`);
     }
-  }
+  };
+  // Other classes' existing rows: only for clash detection, never modified here.
+  const others = db.prepare('SELECT subject, class_name, date, start_time, room FROM datesheet WHERE exam_id = ? AND class_name != ?')
+    .all(examId, className) as { subject: string; class_name: string; date: string; start_time: string; room: string }[];
+  for (const o of others) check(o.class_name, o.subject, o.date, o.start_time, o.room || '');
+  for (const r of rows) check(className, r.subject, r.date, r.start_time, r.room || '');
   if (clashes.length) return { clashes };
   const txn = db.transaction(() => {
-    db.prepare('DELETE FROM datesheet WHERE exam_id = ?').run(examId);
+    db.prepare('DELETE FROM datesheet WHERE exam_id = ? AND class_name = ?').run(examId, className);
     const stmt = db.prepare(`INSERT INTO datesheet (exam_id, subject, class_name, date, start_time, end_time, room)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    for (const r of rows) stmt.run(examId, r.subject, r.class_name, r.date, r.start_time, r.end_time, r.room);
+    for (const r of rows) stmt.run(examId, r.subject, className, r.date, r.start_time, r.end_time, r.room);
   });
   txn();
-  audit(user, 'exams.datesheet', 'exam', examId, null, { count: rows.length });
+  audit(user, 'exams.datesheet', 'exam', examId, null, { className, count: rows.length });
   return { clashes: [] };
 }
 
@@ -119,9 +189,9 @@ export function computeResults(examId: number, className: string): ResultRow[] {
     .all(examId, className) as { subject: string; max_marks: number; pass_marks: number; weightage: number }[];
   if (!subjects.length) return [];
   const bands = db.prepare('SELECT min_percent, grade FROM grade_bands ORDER BY min_percent DESC').all() as { min_percent: number; grade: string }[];
-  const students = db.prepare(`SELECT id, name, admission_no, roll_no FROM students
+  const students = db.prepare(`SELECT id, name, admission_no, roll_no, section, father_name, photo_path FROM students
     WHERE class_name = ? AND status = 'active' AND is_deleted = 0 ORDER BY name`).all(className) as
-    { id: number; name: string; admission_no: string; roll_no: string }[];
+    { id: number; name: string; admission_no: string; roll_no: string; section: string; father_name: string; photo_path: string | null }[];
   const marksRows = db.prepare('SELECT student_id, subject, marks_obtained, is_absent, grace FROM marks WHERE exam_id = ?')
     .all(examId) as { student_id: number; subject: string; marks_obtained: number | null; is_absent: number; grace: number }[];
   const markMap = new Map<string, { marks_obtained: number | null; is_absent: number; grace: number }>();
@@ -143,6 +213,7 @@ export function computeResults(examId: number, className: string): ResultRow[] {
     const percent = maxTotal ? Math.round((total / maxTotal) * 1000) / 10 : 0;
     return {
       id: st.id, student_id: st.id, name: st.name, admission_no: st.admission_no, roll_no: st.roll_no,
+      section: st.section ?? '', father_name: st.father_name ?? '', photo_path: st.photo_path ?? null,
       subjects: subs, total: Math.round(total * 100) / 100, maxTotal: Math.round(maxTotal * 100) / 100,
       percent, grade: gradeFor(percent), rank: 0, pass,
     };

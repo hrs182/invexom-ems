@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { invoke } from '../../lib/ipc';
 import { t } from '../../i18n/index';
-import { PageHeader, EmptyState, Alert } from '../../components/ui/feedback';
+import { PageHeader, EmptyState, Alert, TabFooter } from '../../components/ui/feedback';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input, Textarea, Field } from '../../components/ui/input';
@@ -10,7 +10,7 @@ import { Badge } from '../../components/ui/badge';
 import { DataTable } from '../../components/ui/data-table';
 import { ConfirmDialog } from '../../components/ui/confirm-dialog';
 import { Dialog } from '../../components/ui/dialog';
-import type { MasterKind, InstitutionProfile, SessionRow, NumberingPattern, AuditEntry } from '@shared/types';
+import type { MasterKind, MasterItem, InstitutionProfile, SessionRow, NumberingPattern, AuditEntry } from '@shared/types';
 
 function InstitutionTab() {
   const [form, setForm] = React.useState<InstitutionProfile | null>(null);
@@ -54,24 +54,50 @@ function SessionsTab() {
   const [name, setName] = React.useState('');
   const [start, setStart] = React.useState('2027-04-01');
   const [end, setEnd] = React.useState('2028-03-31');
+  const [feeStart, setFeeStart] = React.useState('2027-04');
   const [busy, setBusy] = React.useState(false);
+  const [editingFee, setEditingFee] = React.useState<Record<number, string>>({});
   const load = React.useCallback(() => { invoke('settings:sessions:list', undefined).then(setRows); }, []);
   React.useEffect(load, [load]);
   const create = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    const r = await invoke('settings:sessions:create', { name: name.trim(), startDate: start, endDate: end });
+    const r = await invoke('settings:sessions:create', { name: name.trim(), startDate: start, endDate: end, feeStartMonth: feeStart });
     setBusy(false);
     if (r.ok) { setName(''); load(); }
   };
+  const saveFeeStart = async (id: number) => {
+    const v = editingFee[id];
+    if (!v) return;
+    const r = await invoke('settings:sessions:update', { id, feeStartMonth: v });
+    if (r.ok) { setEditingFee((e) => { const n = { ...e }; delete n[id]; return n; }); load(); }
+  };
   return (
-    <div className="flex max-w-3xl flex-col gap-4">
+    <div className="flex max-w-4xl flex-col gap-4">
       <p className="text-sm text-muted">{t('settings.sessionsSubtitle')}</p>
       <DataTable
         columns={[
           { key: 'name', header: t('common.name'), sticky: true },
           { key: 'startDate', header: t('setup.startDate') },
           { key: 'endDate', header: t('setup.endDate') },
+          {
+            key: 'feeStartMonth', header: 'Fee start month',
+            render: (r: SessionRow) => editingFee[r.id] !== undefined ? (
+              <span className="flex items-center gap-1">
+                <Input type="month" className="h-8 w-36" value={editingFee[r.id]}
+                  onChange={(e) => setEditingFee((e2) => ({ ...e2, [r.id]: e.target.value }))} />
+                <Button size="sm" onClick={() => void saveFeeStart(r.id)}>Save</Button>
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                {r.feeStartMonth || '—'}
+                <button className="cursor-pointer text-xs text-brand hover:underline"
+                  onClick={() => setEditingFee((e) => ({ ...e, [r.id]: r.feeStartMonth || r.startDate.slice(0, 7) }))}>
+                  Edit
+                </button>
+              </span>
+            ),
+          },
           {
             key: 'status', header: t('common.status'),
             render: (r) => r.isActive ? <Badge tone="success">{t('settings.sessionActive')}</Badge>
@@ -85,8 +111,14 @@ function SessionsTab() {
         <Field label={t('setup.sessionName')} className="min-w-48"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('setup.sessionNamePh')} /></Field>
         <Field label={t('setup.startDate')}><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
         <Field label={t('setup.endDate')}><Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></Field>
+        <Field label="Fee start month"><Input type="month" value={feeStart} onChange={(e) => setFeeStart(e.target.value)} /></Field>
         <Button onClick={create} loading={busy} disabled={!name.trim()}>{t('settings.newSession')}</Button>
       </div>
+      <TabFooter>
+        <strong>Fee start month</strong> decides from which month fee dues are counted for a season
+        (e.g. April for Apr–Mar sessions). The Collect Fee form automatically loads all unpaid dues
+        from this month up to the month you're collecting.
+      </TabFooter>
     </div>
   );
 }
@@ -158,6 +190,135 @@ function MastersTab({ kind }: { kind: MasterKind }) {
           if (r.ok) { setRemoving(null); load(); }
         }}
       />
+    </div>
+  );
+}
+
+/** Classes + per-class sections manager: add/rename/remove/reorder both levels. */
+function ClassesTab() {
+  const [classes, setClasses] = React.useState<{ id: number; name: string }[]>([]);
+  const [sections, setSections] = React.useState<MasterItem[]>([]);
+  const [newClass, setNewClass] = React.useState('');
+  const [newSection, setNewSection] = React.useState<Record<string, string>>({});
+  const [expanded, setExpanded] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState<{ id: number; name: string } | null>(null);
+  const [removing, setRemoving] = React.useState<{ kind: 'class' | 'section'; id: number; name: string } | null>(null);
+
+  const load = React.useCallback(() => {
+    invoke('masters:list', { kind: 'class' }).then(setClasses);
+    invoke('masters:list', { kind: 'section' }).then(setSections);
+  }, []);
+  React.useEffect(load, [load]);
+
+  const extraClass = (s: MasterItem): string | undefined => {
+    try {
+      const ex = typeof s.extra === 'string' ? JSON.parse(s.extra || '{}') : (s.extra ?? {});
+      return (ex as { class?: string }).class;
+    } catch { return undefined; }
+  };
+  const secsFor = (className: string) => sections.filter((s) => extraClass(s) === className);
+
+  const addClass = async () => {
+    if (!newClass.trim()) return;
+    const r = await invoke('masters:add', { kind: 'class', name: newClass.trim() });
+    if (r.ok) { setNewClass(''); load(); }
+  };
+  const addSection = async (className: string) => {
+    const v = (newSection[className] || '').trim();
+    if (!v) return;
+    const r = await invoke('masters:add', { kind: 'section', name: v, extra: JSON.stringify({ class: className }) });
+    if (r.ok) { setNewSection((m) => ({ ...m, [className]: '' })); load(); }
+  };
+  const doRename = async () => {
+    if (!editing || !editing.name.trim()) return;
+    const r = await invoke('masters:rename', { kind: 'class', id: editing.id, name: editing.name.trim() });
+    if (r.ok) { setEditing(null); load(); }
+  };
+  const doReorder = async (kind: 'class' | 'section', id: number, direction: 'up' | 'down') => {
+    const r = await invoke('masters:reorder', { kind, id, direction });
+    if (r.ok) load();
+  };
+  const doRemove = async () => {
+    if (!removing) return;
+    const r = await invoke('masters:remove', { kind: removing.kind, id: removing.id });
+    if (r.ok) { setRemoving(null); load(); }
+  };
+
+  return (
+    <div className="flex max-w-3xl flex-col gap-4">
+      <div className="flex gap-2">
+        <Input value={newClass} onChange={(e) => setNewClass(e.target.value)}
+          placeholder={t('settings.newClassPh')}
+          onKeyDown={(e) => { if (e.key === 'Enter') void addClass(); }} />
+        <Button onClick={addClass} disabled={!newClass.trim()}>{t('settings.addClass')}</Button>
+      </div>
+      <div className="flex flex-col gap-2">
+        {classes.map((c, i) => {
+          const secs = secsFor(c.name);
+          const isOpen = expanded === c.name;
+          return (
+            <Card key={c.id} className="p-3">
+              <div className="flex items-center gap-2">
+                <button className="flex-1 cursor-pointer text-left font-medium" onClick={() => setExpanded(isOpen ? null : c.name)}>
+                  <span className="mr-2 text-muted">{isOpen ? '▾' : '▸'}</span>{c.name}
+                  <span className="ml-2 text-xs text-muted">{t('settings.sectionsCount', { n: secs.length })}</span>
+                </button>
+                <Button variant="ghost" size="sm" disabled={i === 0} onClick={() => void doReorder('class', c.id, 'up')} title={t('common.moveUp')}>↑</Button>
+                <Button variant="ghost" size="sm" disabled={i === classes.length - 1} onClick={() => void doReorder('class', c.id, 'down')} title={t('common.moveDown')}>↓</Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(c)}>{t('settings.rename')}</Button>
+                <Button variant="ghost" size="sm" onClick={() => setRemoving({ kind: 'class', id: c.id, name: c.name })}>{t('settings.remove')}</Button>
+              </div>
+              {isOpen && (
+                <div className="mt-3 border-t border-border pt-3 pl-6">
+                  <div className="mb-2 flex gap-2">
+                    <Input value={newSection[c.name] || ''} onChange={(e) => setNewSection((m) => ({ ...m, [c.name]: e.target.value }))}
+                      placeholder={t('settings.newSectionPh')}
+                      onKeyDown={(e) => { if (e.key === 'Enter') void addSection(c.name); }} />
+                    <Button variant="secondary" onClick={() => void addSection(c.name)} disabled={!(newSection[c.name] || '').trim()}>
+                      {t('settings.addSection')}
+                    </Button>
+                  </div>
+                  {secs.length === 0 ? (
+                    <p className="text-sm text-muted">{t('settings.noSections')}</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1">
+                      {secs.map((s, j) => (
+                        <li key={s.id} className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-1.5">
+                          <span className="flex-1 text-sm">{s.name}</span>
+                          <Button variant="ghost" size="sm" disabled={j === 0} onClick={() => void doReorder('section', s.id, 'up')} title={t('common.moveUp')}>↑</Button>
+                          <Button variant="ghost" size="sm" disabled={j === secs.length - 1} onClick={() => void doReorder('section', s.id, 'down')} title={t('common.moveDown')}>↓</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setRemoving({ kind: 'section', id: s.id, name: `${c.name}-${s.name}` })}>{t('settings.remove')}</Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+        {classes.length === 0 && <EmptyState title={t('empty.masters')} />}
+      </div>
+      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)} title={t('settings.rename')}>
+        {editing && (
+          <div className="flex flex-col gap-4">
+            <Field label={t('common.name')}>
+              <Input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') void doRename(); }} />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setEditing(null)}>{t('common.cancel')}</Button>
+              <Button onClick={() => void doRename()}>{t('common.save')}</Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+      <ConfirmDialog
+        open={!!removing} onOpenChange={(v) => !v && setRemoving(null)}
+        title={t('settings.remove')} message={removing ? t('settings.removeConfirm', { name: removing.name }) : ''}
+        confirmLabel={t('common.delete')} danger onConfirm={() => void doRemove()}
+      />
+      <p className="text-xs text-muted">{t('settings.classesHelp')}</p>
     </div>
   );
 }
@@ -253,8 +414,7 @@ export function SettingsScreen({ onNavigate }: { onNavigate?: (k: string) => voi
   const masterTabs: { value: string; label: string; content: React.ReactNode }[] = [
     { value: 'institution', label: t('settings.tabs.institution'), content: <InstitutionTab /> },
     { value: 'sessions', label: t('settings.tabs.sessions'), content: <SessionsTab /> },
-    { value: 'classes', label: t('settings.tabs.classes'), content: <MastersTab kind="class" /> },
-    { value: 'subjects', label: t('settings.tabs.subjects'), content: <MastersTab kind="subject" /> },
+    { value: 'classes', label: t('settings.tabs.classes'), content: <ClassesTab /> },
     { value: 'feeHeads', label: t('settings.tabs.feeHeads'), content: <MastersTab kind="fee-head" /> },
     { value: 'ledgers', label: t('settings.tabs.ledgers'), content: <MastersTab kind="ledger" /> },
     { value: 'leaveTypes', label: t('settings.tabs.leaveTypes'), content: <MastersTab kind="leave-type" /> },

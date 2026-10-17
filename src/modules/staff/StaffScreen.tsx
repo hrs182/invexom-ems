@@ -6,10 +6,11 @@ import { Card } from '../../components/ui/card';
 import { Input, Label } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
-import { SalarySlipPrint } from '../../components/print/documents';
+import { SalarySlipPrint, PayrollRegisterPrint } from '../../components/print/documents';
+import { downloadExcel } from '../../lib/exportExcel';
 import { Dialog } from '../../components/ui/dialog';
 import { DataTable, type Column } from '../../components/ui/data-table';
-import { PageHeader, EmptyState, Alert, StatCard } from '../../components/ui/feedback';
+import { PageHeader, EmptyState, Alert, StatCard, TabFooter } from '../../components/ui/feedback';
 import { Tabs } from '../../components/ui/primitives';
 import type { StaffDetail, SalaryComponent, PayrollLine } from '@shared/types';
 
@@ -39,9 +40,34 @@ function StaffTab() {
   const [structStaff, setStructStaff] = React.useState<StaffDetail | null>(null);
   const [components, setComponents] = React.useState<SalaryComponent[]>([]);
   const [msg, setMsg] = React.useState('');
+  const [q, setQ] = React.useState('');
+  const [desigFilter, setDesigFilter] = React.useState('');
+  const [deptFilter, setDeptFilter] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('');
 
   const load = React.useCallback(async () => setRows(await invoke('staff:full:list', undefined)), []);
   React.useEffect(() => { void load(); }, [load]);
+
+  const designations = React.useMemo(() => [...new Set(rows.map((r) => r.designation).filter(Boolean))].sort(), [rows]);
+  const departments = React.useMemo(() => [...new Set(rows.map((r) => r.department).filter(Boolean))].sort(), [rows]);
+  const filtered = rows.filter((r) =>
+    (!q || r.name.toLowerCase().includes(q.toLowerCase()) || r.employee_code.toLowerCase().includes(q.toLowerCase()) || r.phone.includes(q)) &&
+    (!desigFilter || r.designation === desigFilter) &&
+    (!deptFilter || r.department === deptFilter) &&
+    (!statusFilter || r.status === statusFilter)
+  );
+
+  const exportExcel = () => {
+    downloadExcel(`staff-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Staff',
+      rows: filtered.map((r) => ({
+        'Employee Code': r.employee_code, 'Name': r.name,
+        'Designation': r.designation, 'Department': r.department,
+        'Phone': r.phone, 'Email': r.email,
+        'Joining Date': r.joining_date, 'Status': r.status,
+      })),
+    }]);
+  };
 
   const openAdd = () => { setEditing(null); setForm({}); setOpen(true); };
   const openEdit = async (r: StaffDetail) => {
@@ -89,8 +115,31 @@ function StaffTab() {
   return (
     <div>
       {msg && <Alert tone="brand" title="" className="mb-4">{msg}</Alert>}
-      <div className="mb-3 flex justify-end"><Button onClick={openAdd}>{t('modules.staff.addStaff')}</Button></div>
-      <DataTable columns={columns} rows={rows} empty={<EmptyState title={t('modules.staff.noStaff')} actionLabel={t('modules.staff.addStaff')} onAction={openAdd} />} />
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <div><Label>Search</Label>
+          <Input placeholder="Name, code or phone…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
+        </div>
+        <div><Label>Designation</Label>
+          <Select value={desigFilter} onValueChange={setDesigFilter} placeholder="All"
+            options={[{ value: '', label: 'All' }, ...designations.map((d) => ({ value: d, label: d }))]} className="w-40" />
+        </div>
+        <div><Label>Department</Label>
+          <Select value={deptFilter} onValueChange={setDeptFilter} placeholder="All"
+            options={[{ value: '', label: 'All' }, ...departments.map((d) => ({ value: d, label: d }))]} className="w-40" />
+        </div>
+        <div><Label>Status</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter} placeholder="All"
+            options={[{ value: '', label: 'All' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} className="w-32" />
+        </div>
+        {(q || desigFilter || deptFilter || statusFilter) && (
+          <Button variant="ghost" size="sm" onClick={() => { setQ(''); setDesigFilter(''); setDeptFilter(''); setStatusFilter(''); }}>Clear</Button>
+        )}
+        <div className="ml-auto flex items-end gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={filtered.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={openAdd}>{t('modules.staff.addStaff')}</Button>
+        </div>
+      </div>
+      <DataTable columns={columns} rows={filtered} empty={<EmptyState title={t('modules.staff.noStaff')} actionLabel={t('modules.staff.addStaff')} onAction={openAdd} />} />
 
       <Dialog open={open} onOpenChange={setOpen} title={editing ? t('modules.staff.editStaff') : t('modules.staff.newStaff')} wide>
         <div className="grid grid-cols-2 gap-3">
@@ -177,6 +226,19 @@ function PayrollTab() {
 
   const total = lines.reduce((a, l) => a + l.net, 0);
 
+  const exportPayrollExcel = () => {
+    downloadExcel(`salary-register-${month}`, [{
+      name: `Salary ${month}`,
+      rows: lines.map((l) => ({
+        'Employee Code': l.employee_code, 'Name': l.staff_name,
+        'Designation': l.designation, 'Department': l.department,
+        'Payable Days': l.payable_days, 'LOP Days': l.lop_days,
+        'Gross': l.gross, 'Deductions': l.total_deductions,
+        'Arrears': l.arrears, 'Bonus': l.bonus, 'Net Pay': l.net,
+      })),
+    }]);
+  };
+
   return (
     <div>
       {msg && <Alert tone="brand" title="" className="mb-4">{msg}</Alert>}
@@ -187,7 +249,8 @@ function PayrollTab() {
         <div className="ml-auto flex items-end gap-2">
           <StatCard label={t('modules.staff.totalPayout')} value={`₹${total.toFixed(2)}`} />
           {run?.status !== 'finalized' && lines.length > 0 && <Button onClick={() => void finalize()}>{t('modules.staff.finalize')}</Button>}
-          <Button variant="secondary" className="no-print" onClick={() => window.print()}>{t('modules.staff.printRegister')}</Button>
+          <Button variant="secondary" className="no-print" onClick={() => window.print()} disabled={lines.length === 0}>{t('modules.staff.printRegister')}</Button>
+          <Button variant="secondary" className="no-print" onClick={exportPayrollExcel} disabled={lines.length === 0}>{t('common.excel')}</Button>
         </div>
       </div>
 
@@ -226,6 +289,7 @@ function PayrollTab() {
         </Card>
       )}
 
+      {lines.length > 0 && !slip && <PayrollRegisterPrint month={month} lines={lines} />}
       <Dialog open={!!slip} onOpenChange={(v) => !v && setSlip(null)} title={t('modules.staff.slipTitle', { m: month })}>
         {slip && (
           <>
@@ -234,6 +298,8 @@ function PayrollTab() {
               <div className="mb-3 grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-muted">Name:</span> <strong>{slip.staff_name}</strong></div>
                 <div><span className="text-muted">Code:</span> {slip.employee_code}</div>
+                <div><span className="text-muted">Designation:</span> {slip.designation || '—'}</div>
+                <div><span className="text-muted">Department:</span> {slip.department || '—'}</div>
                 <div><span className="text-muted">Payable days:</span> {slip.payable_days}</div>
                 <div><span className="text-muted">LOP:</span> {slip.lop_days}</div>
               </div>
@@ -253,20 +319,22 @@ function PayrollTab() {
             <div className="no-print mt-4 flex justify-end"><Button onClick={() => window.print()}>{t('modules.fees.printPdf')}</Button></div>
           </>
         )}
-        {slip && (
-          <SalarySlipPrint slip={{
-            month, employee_code: slip.employee_code, name: slip.staff_name,
-            designation: '', payable_days: slip.payable_days,
-            earnings: [
-              ...slip.earnings,
-              ...(slip.bonus > 0 ? [{ component: 'Bonus', amount: slip.bonus }] : []),
-              ...(slip.arrears > 0 ? [{ component: 'Arrears', amount: slip.arrears }] : []),
-            ],
-            deductions: slip.deductions,
-            gross: slip.gross, totalDeductions: slip.total_deductions, net: slip.net,
-          }} />
-        )}
       </Dialog>
+      {slip && (
+        <SalarySlipPrint slip={{
+          month, employee_code: slip.employee_code, name: slip.staff_name,
+          designation: slip.designation, department: slip.department,
+          payable_days: slip.payable_days, lop_days: slip.lop_days,
+          bank_name: slip.bank_name, bank_account: slip.bank_account,
+          earnings: [
+            ...slip.earnings,
+            ...(slip.bonus > 0 ? [{ component: 'Bonus', amount: slip.bonus }] : []),
+            ...(slip.arrears > 0 ? [{ component: 'Arrears', amount: slip.arrears }] : []),
+          ],
+          deductions: slip.deductions,
+          gross: slip.gross, totalDeductions: slip.total_deductions, net: slip.net,
+        }} />
+      )}
     </div>
   );
 }
@@ -284,6 +352,11 @@ export function StaffScreen() {
         value={tab}
         onValueChange={setTab}
       />
+      <TabFooter>
+        <strong>Staff & payroll:</strong> Add staff with their salary structure (Basic, HRA, PF, …).
+        Run payroll for a month to generate salary slips; LOP = Loss of Pay days deducted from payable days.
+        Finalized payroll runs are locked and cannot be edited.
+      </TabFooter>
     </div>
   );
 }

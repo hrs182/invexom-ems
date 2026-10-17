@@ -14,6 +14,23 @@ describe('setup seed: masters (regression — UNIQUE(kind,name) must never fail 
     openDatabase(':memory:'); // runs the real migrations, including the UNIQUE(kind, name) constraint
   });
 
+  it('allows the same section name under different classes', () => {
+    seedSetupMasters(
+      getDb(),
+      [
+        { name: 'I', sections: ['A', 'B'] },
+        { name: 'II', sections: ['A', 'B'] },
+      ],
+      [],
+    );
+    expect(count('section')).toBe(4);
+    // Same section + same class is still a duplicate
+    expect(() =>
+      seedSetupMasters(getDb(), [{ name: 'I', sections: ['A'] }], []),
+    ).not.toThrow();
+    expect(count('section')).toBe(4);
+  });
+
   it('seeds classes, sections and fee heads on the happy path', () => {
     seedSetupMasters(
       getDb(),

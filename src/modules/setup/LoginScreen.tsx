@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { invoke, errText, errDetail } from '../../lib/ipc';
 import { t } from '../../i18n/index';
-import { useApp } from '../../stores/app';
+import { useApp, isWebDemo } from '../../stores/app';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Input, Field } from '../../components/ui/input';
@@ -157,6 +157,13 @@ export function LoginScreen() {
             </Alert>
           )}
           <form onSubmit={submit} className="flex flex-col gap-4">
+            {isWebDemo && (
+              <Alert tone="brand">
+                <p className="font-medium">Live demo — explore freely.</p>
+                <p className="mt-1 text-[13px]">Username: <code>demo</code> · Password: <code>demo1234</code></p>
+                <p className="mt-1 text-[12px] opacity-80">Demo data resets every midnight IST. Nothing you enter leaves this demo.</p>
+              </Alert>
+            )}
             {error && (
               <Alert tone="danger">
                 <p>{error}</p>

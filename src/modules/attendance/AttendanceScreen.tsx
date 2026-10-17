@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/card';
 import { Input, Label } from '../../components/ui/input';
 import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
+import { downloadExcel } from '../../lib/exportExcel';
 import { Dialog } from '../../components/ui/dialog';
 import { DataTable, type Column } from '../../components/ui/data-table';
 import { PageHeader, EmptyState, Alert, ProgressBar } from '../../components/ui/feedback';
@@ -17,8 +18,9 @@ const STATUS = ['P', 'A', 'L', 'H'] as const;
 
 function StudentTab() {
   const [classes, setClasses] = React.useState<MasterItem[]>([]);
+  const [allSections, setAllSections] = React.useState<MasterItem[]>([]);
   const [className, setClassName] = React.useState('');
-  const [section, setSection] = React.useState('A');
+  const [section, setSection] = React.useState('');
   const [date, setDate] = React.useState(today());
   const [roster, setRoster] = React.useState<{ id: number; name: string; admission_no: string; roll_no: string }[]>([]);
   const [marks, setMarks] = React.useState<Record<number, string>>({});
@@ -29,7 +31,20 @@ function StudentTab() {
       setClasses(c);
       if (c.length) setClassName((prev) => prev || c[0].name);
     }).catch(() => {});
+    invoke('masters:list', { kind: 'section' }).then(setAllSections).catch(() => {});
   }, []);
+
+  const secsFor = className ? allSections.filter((s) => {
+    try {
+      const ex = typeof s.extra === 'string' ? JSON.parse(s.extra || '{}') : (s.extra ?? {});
+      return (ex as { class?: string }).class === className;
+    } catch { return false; }
+  }) : [];
+  React.useEffect(() => {
+    // Auto-pick first section when class changes
+    if (secsFor.length && !secsFor.find((s) => s.name === section)) setSection(secsFor[0].name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [className]);
 
   const load = React.useCallback(async () => {
     if (!className) return;
@@ -63,7 +78,10 @@ function StudentTab() {
           <Select value={className} onValueChange={setClassName} placeholder="Class"
             options={classes.map((c) => ({ value: c.name, label: c.name }))} className="w-36" />
         </div>
-        <div><Label>{t('modules.attendance.section')}</Label><Input value={section} onChange={(e) => setSection(e.target.value)} className="w-20" /></div>
+        <div><Label>{t('modules.attendance.section')}</Label>
+          <Select value={section} onValueChange={setSection} placeholder="Section"
+            options={secsFor.map((s) => ({ value: s.name, label: s.name }))} className="w-28" />
+        </div>
         <div><Label>{t('modules.attendance.date')}</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         <div className="ml-auto flex gap-2">
           <Button variant="secondary" onClick={() => markAll('P')}>{t('modules.attendance.allPresent')}</Button>
@@ -108,6 +126,9 @@ function StudentTab() {
           </tbody>
         </table>
       </Card>
+      <p className="mt-3 text-xs text-muted">
+        {t('modules.attendance.legend')}
+      </p>
     </div>
   );
 }
@@ -248,8 +269,9 @@ function LeavesTab() {
 
 function PercentTab() {
   const [classes, setClasses] = React.useState<MasterItem[]>([]);
+  const [allSections, setAllSections] = React.useState<MasterItem[]>([]);
   const [className, setClassName] = React.useState('');
-  const [section, setSection] = React.useState('A');
+  const [section, setSection] = React.useState('');
   const [from, setFrom] = React.useState(new Date().toISOString().slice(0, 7) + '-01');
   const [to, setTo] = React.useState(today());
   const [rows, setRows] = React.useState<{ student_id: number; name: string; admission_no: string; present: number; total: number; percent: number; below: boolean }[]>([]);
@@ -259,11 +281,34 @@ function PercentTab() {
       setClasses(c);
       if (c.length) setClassName((prev) => prev || c[0].name);
     }).catch(() => {});
+    invoke('masters:list', { kind: 'section' }).then(setAllSections).catch(() => {});
   }, []);
+
+  const secsFor = className ? allSections.filter((s) => {
+    try {
+      const ex = typeof s.extra === 'string' ? JSON.parse(s.extra || '{}') : (s.extra ?? {});
+      return (ex as { class?: string }).class === className;
+    } catch { return false; }
+  }) : [];
+  React.useEffect(() => {
+    if (secsFor.length && !secsFor.find((s) => s.name === section)) setSection(secsFor[0].name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [className]);
 
   const load = async () => {
     if (!className) return;
     setRows(await invoke('attendance:percent', { className, section, from, to }));
+  };
+
+  const exportExcel = () => {
+    downloadExcel(`attendance-${className}${section ? `-${section}` : ''}-${from}-to-${to}`, [{
+      name: 'Attendance %',
+      rows: rows.map((r) => ({
+        'Student': r.name, 'Adm No': r.admission_no,
+        'Present': r.present, 'Total Days': r.total,
+        'Percentage': r.percent, 'Below Threshold': r.below ? 'Yes' : 'No',
+      })),
+    }]);
   };
 
   return (
@@ -273,10 +318,16 @@ function PercentTab() {
           <Select value={className} onValueChange={setClassName} placeholder="Class"
             options={classes.map((c) => ({ value: c.name, label: c.name }))} className="w-36" />
         </div>
-        <div><Label>{t('modules.attendance.section')}</Label><Input value={section} onChange={(e) => setSection(e.target.value)} className="w-20" /></div>
+        <div><Label>{t('modules.attendance.section')}</Label>
+          <Select value={section} onValueChange={setSection} placeholder="Section"
+            options={secsFor.map((s) => ({ value: s.name, label: s.name }))} className="w-28" />
+        </div>
         <div><Label>{t('modules.attendance.from')}</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
         <div><Label>{t('modules.attendance.to')}</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <Button onClick={() => void load()}>{t('modules.attendance.compute')}</Button>
+        <div className="ml-auto">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+        </div>
       </div>
       <Card className="p-0">
         <table className="w-full text-sm">

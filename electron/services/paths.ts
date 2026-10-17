@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app } from './electron-shim.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -11,6 +11,9 @@ export function isPortable(): boolean {
 }
 
 export function appDataDir(): string {
+  // Web-demo server override (plain Node has no Electron app object).
+  const override = process.env.EMS_WEB_DATA_DIR;
+  if (override) return override;
   if (isPortable()) {
     const exeDir = process.env.PORTABLE_EXECUTABLE_DIR as string;
     return path.join(exeDir, 'EMS-Data');

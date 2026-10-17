@@ -6,7 +6,8 @@ import { audit } from './audit.js';
 const COLS = `id, admission_no, name, dob, gender, blood_group, category, religion, nationality,
   class_name, section, roll_no, admission_date, previous_school, sibling_info,
   father_name, father_occupation, father_phone, mother_name, mother_occupation, mother_phone,
-  guardian_name, guardian_phone, address, photo_path, status, session_id`;
+  guardian_name, guardian_phone, address, photo_path, status, session_id,
+  transport_allocated, transport_amount`;
 
 export function listStudents(f: StudentFilters): { rows: StudentRow[]; total: number } {
   const db = getDb();
@@ -15,6 +16,8 @@ export function listStudents(f: StudentFilters): { rows: StudentRow[]; total: nu
   if (f.q) { where.push('(name LIKE ? OR admission_no LIKE ? OR father_phone LIKE ? OR mother_phone LIKE ?)'); const q = `%${f.q}%`; vals.push(q, q, q, q); }
   if (f.class_name) { where.push('class_name = ?'); vals.push(f.class_name); }
   if (f.section) { where.push('section = ?'); vals.push(f.section); }
+  if (f.gender) { where.push('gender = ?'); vals.push(f.gender); }
+  if (f.category) { where.push('category = ?'); vals.push(f.category); }
   if (f.status) { where.push('status = ?'); vals.push(f.status); } else { where.push("status = 'active'"); }
   if (f.session_id) { where.push('session_id = ?'); vals.push(f.session_id); }
   const w = where.join(' AND ');
@@ -63,14 +66,16 @@ export function createStudent(input: StudentInput, sessionId: number | null, use
     const r = db.prepare(`INSERT INTO students
       (admission_no, name, dob, gender, blood_group, category, religion, nationality, class_name, section,
        roll_no, admission_date, previous_school, sibling_info, father_name, father_occupation, father_phone,
-       mother_name, mother_occupation, mother_phone, guardian_name, guardian_phone, address, photo_path, session_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+       mother_name, mother_occupation, mother_phone, guardian_name, guardian_phone, address, photo_path, session_id,
+       transport_allocated, transport_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(admission_no, input.name.trim(), input.dob ?? '', input.gender ?? '', input.blood_group ?? '',
         input.category ?? '', input.religion ?? '', input.nationality ?? 'Indian', input.class_name,
         input.section ?? '', input.roll_no ?? '', input.admission_date ?? new Date().toISOString().slice(0, 10),
         input.previous_school ?? '', input.sibling_info ?? '', input.father_name ?? '', input.father_occupation ?? '',
         input.father_phone ?? '', input.mother_name ?? '', input.mother_occupation ?? '', input.mother_phone ?? '',
-        input.guardian_name ?? '', input.guardian_phone ?? '', input.address ?? '', input.photo_path ?? null, sessionId);
+        input.guardian_name ?? '', input.guardian_phone ?? '', input.address ?? '', input.photo_path ?? null, sessionId,
+        input.transport_allocated ? 1 : 0, input.transport_amount ?? 0);
     const id = Number(r.lastInsertRowid);
     db.prepare('INSERT INTO student_status_history (student_id, old_status, new_status, reason, changed_by) VALUES (?, ?, ?, ?, ?)')
       .run(id, '', 'active', 'Admission', user.id);
@@ -96,8 +101,20 @@ export function updateStudent(id: number, patch: Partial<StudentInput>, user: Sa
     const v = (patch as Record<string, unknown>)[k];
     if (v !== undefined) { sets.push(`${col} = ?`); vals.push(v); }
   }
+  // Transport fields need boolean->int conversion
+  if (patch.transport_allocated !== undefined) { sets.push('transport_allocated = ?'); vals.push(patch.transport_allocated ? 1 : 0); }
+  if (patch.transport_amount !== undefined) { sets.push('transport_amount = ?'); vals.push(patch.transport_amount); }
   if (!sets.length) return;
+  const wasTransport = (db.prepare('SELECT transport_allocated FROM students WHERE id = ?').get(id) as { transport_allocated: number } | undefined)?.transport_allocated ?? 0;
   db.prepare(`UPDATE students SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...vals, id);
+  // If transport was removed, zero out unpaid transport dues so they show ₹0
+  if (wasTransport && patch.transport_allocated === false) {
+    const tHeads = db.prepare("SELECT id FROM masters WHERE kind = 'fee-head' AND LOWER(name) LIKE '%transport%'").all() as { id: number }[];
+    if (tHeads.length) {
+      db.prepare(`UPDATE fee_dues SET amount = 0 WHERE student_id = ? AND status != 'paid'
+        AND head_id IN (${tHeads.map(() => '?').join(',')})`).run(id, ...tHeads.map((h) => h.id));
+    }
+  }
   audit(user, 'students.update', 'student', id, null, patch);
 }
 

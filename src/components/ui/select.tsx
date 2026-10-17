@@ -24,7 +24,7 @@ export function Select({
         </RSelect.Icon>
       </RSelect.Trigger>
       <RSelect.Portal>
-        <RSelect.Content className="z-50 max-h-64 overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[var(--shadow-lg)]" position="popper">
+        <RSelect.Content className="z-[70] max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-xl border border-border bg-surface p-1 shadow-[var(--shadow-lg)]" position="popper">
           <RSelect.Viewport>
             {options.map((o) => (
               <RSelect.Item

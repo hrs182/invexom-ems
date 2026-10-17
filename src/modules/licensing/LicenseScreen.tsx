@@ -48,10 +48,12 @@ export function LicenseScreen() {
     const p = await openFile({ title: t('license.activateTitle'), filters: [{ name: 'License', extensions: ['inelic'] }] });
     if (!p) return;
     setFileName(p);
-    // Renderer sandbox can't read the file: pass the path, main reads it.
+    // Renderer sandbox can't read files: on desktop we pass __FILE__:<path>
+    // and main reads it; on web openFile already returned the raw text.
+    const looksLikePath = p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p);
     setBusy(true); setError('');
     try {
-      const text = await invoke('license:activate', { licenseText: `__FILE__:${p}` });
+      const text = await invoke('license:activate', { licenseText: looksLikePath ? `__FILE__:${p}` : p });
       if (text.ok) { setFileName(''); load(); }
       else setError(text.error);
     } catch (e) {

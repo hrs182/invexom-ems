@@ -8,6 +8,7 @@ import { Select } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
 import { Dialog } from '../../components/ui/dialog';
 import { DataTable, type Column } from '../../components/ui/data-table';
+import { downloadExcel } from '../../lib/exportExcel';
 import { PageHeader, EmptyState, Alert, StatCard } from '../../components/ui/feedback';
 import { Tabs } from '../../components/ui/primitives';
 import type { ItemRow, AssetRow } from '@shared/types';
@@ -33,6 +34,18 @@ function ItemsTab() {
     if (r.ok) { setOpen(false); setForm({}); void load(); }
   };
 
+  const exportExcel = () => {
+    downloadExcel(`inventory-stock-${new Date().toISOString().slice(0, 10)}`, [{
+      name: 'Stock',
+      rows: rows.map((r) => ({
+        'Item': r.name, 'Category': r.category, 'Unit': r.unit,
+        'Current Stock': r.current_stock, 'Reorder Level': r.reorder_level,
+        'Purchase Rate': r.purchase_rate, 'Stock Value': Math.round(r.current_stock * r.purchase_rate * 100) / 100,
+        'Barcode': r.barcode,
+      })),
+    }]);
+  };
+
   const columns: Column<ItemRow>[] = [
     {
       key: 'name', header: t('modules.inventory.item'),
@@ -55,7 +68,10 @@ function ItemsTab() {
       )}
       <div className="mb-3 flex items-end gap-2">
         <StatCard label={t('modules.inventory.stockValuation')} value={`₹${valuation.toFixed(2)}`} />
-        <Button className="ml-auto" onClick={() => { setForm({}); setOpen(true); }}>+ Add item</Button>
+        <div className="ml-auto flex items-end gap-2">
+          <Button variant="secondary" className="no-print" onClick={exportExcel} disabled={rows.length === 0}>{t('common.excel')}</Button>
+          <Button onClick={() => { setForm({}); setOpen(true); }}>+ Add item</Button>
+        </div>
       </div>
       <DataTable columns={columns} rows={rows} empty={<EmptyState title="No items yet" />} />
       <Dialog open={open} onOpenChange={setOpen} title={form.id ? 'Edit item' : 'Add item'}>

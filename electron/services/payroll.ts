@@ -1,6 +1,6 @@
 import { getDb } from './database.js';
 import { nextNumber } from './numbering.js';
-import type { SafeUser } from '../../shared/types.js';
+import type { SafeUser, PayrollLine } from '../../shared/types.js';
 import { audit } from './audit.js';
 
 export interface StaffDetail {
@@ -82,14 +82,6 @@ export function saveSalaryStructure(staffId: number, components: SalaryComponent
   audit(user, 'staff.salaryStructure', 'staff', staffId);
 }
 
-export interface PayrollLine {
-  id: number; staff_id: number; staff_name: string; employee_code: string;
-  payable_days: number; lop_days: number;
-  earnings: { component: string; amount: number }[]; deductions: { component: string; amount: number }[];
-  arrears: number; bonus: number; gross: number; total_deductions: number; net: number;
-  bank_account: string; bank_name: string;
-}
-
 /** FR-SAL-03: monthly payroll — payable days auto from staff attendance; LOP auto. */
 export function runPayroll(month: string, user: SafeUser): { runId: number; lines: PayrollLine[] } {
   const db = getDb();
@@ -145,6 +137,7 @@ export function runPayroll(month: string, user: SafeUser): { runId: number; line
         JSON.stringify(earnings), JSON.stringify(deductions), gross, totalDed, net);
       lines.push({
         id: 0, staff_id: s.id, staff_name: s.name, employee_code: s.employee_code,
+        designation: s.designation, department: s.department,
         payable_days: payableDays, lop_days: lopDays, earnings, deductions,
         arrears: 0, bonus: 0, gross, total_deductions: totalDed, net,
         bank_account: s.bank_account, bank_name: s.bank_name,
@@ -157,7 +150,8 @@ export function runPayroll(month: string, user: SafeUser): { runId: number; line
 }
 
 export function getPayrollLines(runId: number): PayrollLine[] {
-  const rows = getDb().prepare(`SELECT pl.*, s.name AS staff_name, s.employee_code, s.bank_account, s.bank_name
+  const rows = getDb().prepare(`SELECT pl.*, s.name AS staff_name, s.employee_code, s.bank_account, s.bank_name,
+      s.designation, s.department
     FROM payroll_lines pl JOIN staff s ON s.id = pl.staff_id WHERE pl.run_id = ? ORDER BY s.name`).all(runId) as
     (Omit<PayrollLine, 'earnings' | 'deductions'> & { earnings: string; deductions: string })[];
   return rows.map((r) => ({ ...r, earnings: JSON.parse(r.earnings), deductions: JSON.parse(r.deductions) }));

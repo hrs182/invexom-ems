@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useApp } from './stores/app';
+import { useApp, isWebDemo } from './stores/app';
 import { t } from './i18n/index';
 import { Sidebar } from './components/ui/sidebar';
 import { Topbar } from './components/ui/topbar';
@@ -154,6 +154,11 @@ export default function App() {
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onOpenSearch={() => setSearchOpen(true)} onNavigate={setRoute} />
+        {isWebDemo && (
+          <div className="no-print border-b border-brand bg-brand-soft px-4 py-1.5 text-center text-[12.5px] font-medium text-brand">
+            Live demo by Invexom — sample data resets every midnight IST. <span className="opacity-75">This is the actual EMS software running in your browser.</span>
+          </div>
+        )}
         {readOnly && (
           <div className="no-print border-b border-danger bg-danger-soft px-4 py-2 text-center text-[13px] font-medium text-danger">
             {t('license.readOnlyNote')}

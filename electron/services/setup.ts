@@ -35,8 +35,15 @@ export function seedSetupMasters(db: Db, classes: SetupClassSeed[], feeHeads: Se
       insSection.run(sec.trim(), JSON.stringify({ class: c.name.trim() }), order++);
     }
   }
+  // Fee heads dedupe by exact name — the DB constraint is (kind,name,extra)
+  // so same-name heads with different types must be collapsed here.
+  // (Case-sensitive to match SQLite UNIQUE semantics.)
+  const seenHeads = new Set<string>();
   for (const h of feeHeads) {
-    if (!h.name.trim()) continue;
-    insHead.run(h.name.trim(), JSON.stringify({ type: h.type, defaultAmount: h.defaultAmount || 0 }));
+    const n = h.name.trim();
+    if (!n) continue;
+    if (seenHeads.has(n)) continue;
+    seenHeads.add(n);
+    insHead.run(n, JSON.stringify({ type: h.type, defaultAmount: h.defaultAmount || 0 }));
   }
 }

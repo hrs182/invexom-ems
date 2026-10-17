@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { invoke } from '../../lib/ipc';
+import { invoke, downloadExportResult } from '../../lib/ipc';
 import { t } from '../../i18n/index';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -40,7 +40,7 @@ export function ReportsScreen() {
 
   const exportXlsx = async () => {
     const r = await invoke('reports:export', { key, params, title: def?.title ?? key });
-    setMsg(r.ok ? `Exported to ${r.filePath}` : r.error === 'cancelled' ? '' : r.error);
+    setMsg(downloadExportResult(r));
   };
 
   const set = (k: string, v: string) => setParams((p) => ({ ...p, [k]: v }));

@@ -3,7 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Invexom EMS</title>
+    <script>
+      // Boot diagnostics: if the app fails to start (e.g. a file didn't
+      // upload correctly), show the reason on the page itself.
+      (function () {
+        var errors = [];
+        function fmt(msg, src) {
+          return (msg || 'unknown error') + (src ? ' — ' + src : '');
+        }
+        window.addEventListener('error', function (e) {
+          var src = e.target && e.target.src ? e.target.src : e.filename;
+          errors.push(fmt(e.message, src));
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          errors.push(fmt('load failed: ' + (e.reason && (e.reason.message || e.reason))));
+        });
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.childNodes.length === 0) {
+            var detail = errors.length ? errors.join('\n') : 'app files may not have finished uploading';
+            root.innerHTML =
+              '<div style="max-width:560px;margin:60px auto;padding:24px;font-family:system-ui,sans-serif;color:#1f2937">' +
+              '<h2 style="font-size:20px;margin-bottom:8px">Invexom EMS could not start</h2>' +
+              '<p style="color:#6b7280;margin-bottom:12px">Please take a screenshot of this box and share it with support.</p>' +
+              '<pre style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px;white-space:pre-wrap;font-size:13px">' +
+              detail.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre></div>';
+          }
+        }, 9000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

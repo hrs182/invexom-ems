@@ -30,6 +30,7 @@ const ctx: AppContext = {
   dataKey: null,
   currentUser: null,
   demoBuild: buildInfo.demoBuild,
+  webMode: false,
   version: buildInfo.version,
   openDatabaseWithKey: (key: Buffer) => {
     openVaultDatabase(key, ctx.paths.workingDir, ctx.paths.dbEnc);
